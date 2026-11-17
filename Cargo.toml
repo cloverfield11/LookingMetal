@@ -3,6 +3,8 @@ name = "looking-metal"
 version = "1.0.0"
 edition = "2021"
 rust-version = "1.86"
+authors = ["Igor Gaponenko <galilan256@gmail.com>"]
+repository = "https://github.com/cloverfield11/LookingMetal"
 publish = false
 description = "American McGee's Alice native Apple Metal port for iOS & macOS ARM"
 

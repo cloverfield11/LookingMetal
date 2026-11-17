@@ -130,7 +130,11 @@ LookingMetal/
 
 ---
 
-## ❤️ Credits
+## 👨‍💻 Author & Maintainer
+
+- **Igor Gaponenko** ([@cloverfield11](https://github.com/cloverfield11)) — Creator and lead developer of **LookingMetal** (iOS & macOS ARM Apple Metal port, touch controls architecture, 120 FPS ProMotion integration, and standalone packaging).
+
+## ❤️ Credits & Acknowledgements
 
 - The [LookingGlass](https://github.com/looking-glass-project/LookingGlass) project contributors for the modern Rust port of the Alice engine.
 - The Nintendo Switch homebrew port creators for assets and inspiration.
