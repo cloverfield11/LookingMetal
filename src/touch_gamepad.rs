@@ -62,8 +62,10 @@ impl Default for TouchGamepad {
 }
 
 impl TouchGamepad {
+    /// Fully adaptive scale factor proportional to the screen height.
+    /// Works identically on standard displays, Retina (2x/3x), iPhones, iPads, and Mac.
     pub fn scale(&self, h: f32) -> f32 {
-        (h / 390.0).clamp(0.75, 1.6) * self.scale_mult
+        (h / 390.0) * self.scale_mult
     }
 
     pub fn update(&mut self) {
@@ -81,7 +83,7 @@ impl TouchGamepad {
         let w = screen_width();
         let h = screen_height();
         let s = self.scale(h);
-        let stick_radius = 50.0 * s;
+        let stick_radius = 58.0 * s;
 
         let touches = macroquad::input::touches();
         if touches.is_empty() {
@@ -155,7 +157,7 @@ impl TouchGamepad {
                     TouchPhase::Moved => {
                         let delta = pos - self.look_prev_pos;
                         // Guard against sudden coordinate jumps (e.g. frame lag)
-                        if delta.length() < 200.0 * s {
+                        if delta.length() < 250.0 * s {
                             self.look_delta.set(self.look_delta.get() + delta);
                         }
                         self.look_prev_pos = pos;
@@ -183,10 +185,10 @@ impl TouchGamepad {
                 continue;
             }
 
-            // 4. New touch: Check button hits with comfortable padding
+            // 4. New touch: Check button hits with generous padding
             let mut hit_btn = None;
             for (btn, center, radius) in &buttons {
-                if pos.distance(*center) <= (*radius + 10.0 * s) {
+                if pos.distance(*center) <= (*radius + 15.0 * s) {
                     hit_btn = Some(*btn);
                     break;
                 }
@@ -223,44 +225,41 @@ impl TouchGamepad {
         }
     }
 
-    /// Button layouts adhering to the approved "Platformer (Jump Low)" mapping.
-    /// Buttons are large, ergonomic, and comfortably positioned for natural thumb resting.
+    /// Button layouts dynamically adapted to screen proportions.
+    /// Provides large, comfortable touch targets tailored for mobile fingers.
     fn button_layouts(&self, w: f32, h: f32, s: f32) -> Vec<(TouchButton, Vec2, f32)> {
         let mut btns = Vec::new();
 
-        // 1. Jump & Climb (A): Giant button in bottom-right corner directly under the resting thumb
-        // Diameter ~78-80px
-        let jump_r = 39.0 * s;
-        let jump_center = vec2(w - 70.0 * s, h - 66.0 * s);
+        // 1. Jump & Climb (A): Large button in bottom-right corner directly under the resting thumb
+        // Sized at ~22% of screen height
+        let jump_r = 43.0 * s;
+        let jump_center = vec2(w - 78.0 * s, h - 72.0 * s);
         btns.push((TouchButton::A, jump_center, jump_r));
 
-        // 2. Primary Attack: Vorpal Blade Slash (X): Giant button directly to the left of Jump
-        // Diameter ~78-80px for easy thumb roll between jump and slash
-        let slash_r = 39.0 * s;
-        let slash_center = vec2(w - 161.0 * s, h - 69.0 * s);
+        // 2. Primary Attack: Vorpal Blade Slash (X): Large button directly to the left of Jump
+        // Sized at ~22% of screen height for effortless thumb roll
+        let slash_r = 43.0 * s;
+        let slash_center = vec2(w - 176.0 * s, h - 74.0 * s);
         btns.push((TouchButton::X, slash_center, slash_r));
 
         // 3. Alt Attack: Throw Blade (B): Above Slash
-        // Diameter ~62px
-        let throw_r = 31.0 * s;
-        let throw_center = vec2(w - 161.0 * s, h - 153.0 * s);
+        let throw_r = 34.0 * s;
+        let throw_center = vec2(w - 176.0 * s, h - 168.0 * s);
         btns.push((TouchButton::B, throw_center, throw_r));
 
         // 4. Action / Interact: Key E (Y): Above Jump
-        // Diameter ~58px
-        let use_r = 29.0 * s;
-        let use_center = vec2(w - 63.0 * s, h - 149.0 * s);
+        let use_r = 31.0 * s;
+        let use_center = vec2(w - 72.0 * s, h - 164.0 * s);
         btns.push((TouchButton::Y, use_center, use_r));
 
         // 5. Swap Weapons / Next Toy (Next): Top-center of cluster
-        // Diameter ~54px
-        let next_r = 27.0 * s;
-        let next_center = vec2(w - 109.0 * s, h - 211.0 * s);
+        let next_r = 29.0 * s;
+        let next_center = vec2(w - 124.0 * s, h - 234.0 * s);
         btns.push((TouchButton::Next, next_center, next_r));
 
         // 6. Pause / Menu (+ / Start): Top-right corner
-        let menu_r = 20.0 * s;
-        let menu_center = vec2(w - 42.0 * s, 36.0 * s);
+        let menu_r = 22.0 * s;
+        let menu_center = vec2(w - 48.0 * s, 42.0 * s);
         btns.push((TouchButton::Start, menu_center, menu_r));
 
         btns
@@ -284,6 +283,7 @@ impl TouchGamepad {
     }
 
     /// Apply camera look rotation from right-screen touch swipes.
+    /// Normalized by screen scale so physical finger travel rotates camera at uniform speed on all devices.
     pub fn apply_look(&self, yaw: &mut f32, pitch: &mut f32) {
         if !self.enabled {
             self.look_delta.set(Vec2::ZERO);
@@ -291,7 +291,8 @@ impl TouchGamepad {
         }
         let delta = self.look_delta.take();
         if delta.length_squared() > 0.0001 {
-            let sens = 0.0034;
+            let s = self.scale(screen_height());
+            let sens = 0.0034 / s.max(0.5);
             *yaw = (*yaw - delta.x * sens).rem_euclid(std::f32::consts::TAU);
             *pitch = (*pitch - delta.y * sens).clamp(-1.5, 1.5);
         }
@@ -361,8 +362,8 @@ impl TouchGamepad {
         let w = screen_width();
         let h = screen_height();
         let s = self.scale(h);
-        let stick_radius = 50.0 * s;
-        let knob_radius = 24.0 * s;
+        let stick_radius = 58.0 * s;
+        let knob_radius = 28.0 * s;
 
         // ==========================================
         // 1. Left Stick (Locomotion / Movement)
@@ -370,7 +371,7 @@ impl TouchGamepad {
         let (lcenter, lknob) = if self.lstick_touch_id.is_some() {
             (self.lstick_center, self.lstick_center + self.lstick_vector * stick_radius)
         } else {
-            let def = vec2(110.0 * s, h - 85.0 * s);
+            let def = vec2(120.0 * s, h - 95.0 * s);
             (def, def)
         };
 
@@ -513,10 +514,10 @@ impl TouchGamepad {
             if label != "+" {
                 let label_rect = Rect::new(center.x - radius, center.y + radius * 0.28, radius * 2.0, radius * 0.65);
                 let font_size = match btn {
-                    TouchButton::A | TouchButton::X => 9.5 * s,
-                    TouchButton::B | TouchButton::Y => 8.5 * s,
-                    TouchButton::Next => 8.0 * s,
-                    _ => 9.0 * s,
+                    TouchButton::A | TouchButton::X => 10.5 * s,
+                    TouchButton::B | TouchButton::Y => 9.5 * s,
+                    TouchButton::Next => 9.0 * s,
+                    _ => 10.0 * s,
                 };
                 let text_color = if is_held {
                     WHITE
