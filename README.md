@@ -17,14 +17,17 @@ No x86 emulation, UTM virtual machines, or translation layers — this is a pure
 
 - ⚡️ **Native Apple Metal Graphics:** Direct hardware acceleration via Apple MetalKit on A-series and M-series chips.
 - 📱 **Smooth 120 FPS (ProMotion):** Fully supports high-refresh displays (iPhone 13 Pro and newer, iPad Pro, MacBook Pro).
-- 🎮 **Ergonomic Virtual Controller:**
-  - **Left Analog Stick (L):** 360° locomotion with a floating/dynamic center under your thumb.
-  - **Dedicated RUN Button:** Convenient Sprint / Walk toggle right beside the analog stick (also auto-sprints at outer stick radius).
-  - **Right Analog Stick (R):** Continuous 360° camera panning with quadratic acceleration curve.
-  - **ABXY Diamond:** `A` — Jump / Climb, `X` — Primary Attack, `B` — Alternate Attack, `Y` — Interact / Use (Key `E`).
-  - **Triggers & Bumpers:** `LT` / `RT` (Attacks), `LB` (Previous toy), `RB` (Next toy).
-  - **System Buttons:** `+` (Menu / Pause / Esc), `-` (Cheshire Cat hint / C).
-  - **Zero False Actions:** In-game attacks and actions are restricted strictly to virtual/physical gamepad controls; casual glass taps will never trigger false attacks.
+- 🎮 **Polished Mobile Controls (Brawl Stars / GTA Mobile Style):**
+  - **Left Analog Stick (MOVE):** 360° locomotion with a dynamic floating center under your thumb. Natural analog speed control: gentle tilt walks calmly at classic pace, firm tilt sprints forward.
+  - **Right Analog Stick (LOOK):** 360° camera rotation with quadratic response curve. Exclusively handles camera look (no accidental camera spins from touching the screen).
+  - **Action Diamond (ABXY):**
+    - `A` (Emerald): Jump & Climb
+    - `X` (Ruby): Primary Attack (Vorpal Blade slash)
+    - `B` (Sapphire): Alternate Attack (Vorpal Blade throw)
+    - `Y` (Amber): Action / Interact (Key `E`: levers, doors, dialogue)
+  - **`NEXT` Toy Button:** Instant one-tap weapon cycling placed right above the attack buttons.
+  - **`+` Button:** Quick pause / menu button in the top corner.
+  - **Zero Accidental Actions:** Touching empty screen glass will never trigger false attacks or camera spins. All interactions are strictly tied to dedicated virtual buttons.
 - 🖱️ **Full Touchpad Menu Navigation:**
   - Swipe anywhere on the screen like a laptop trackpad to glide the Alice cursor across menus with natural momentum.
   - Tap anywhere to click hovered items, or tap directly on menu buttons.

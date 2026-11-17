@@ -2062,6 +2062,11 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                 if held(KeyCode::A) {
                     wish -= right;
                 }
+                let is_running = if run_touch_ui {
+                    touch_pad.is_running()
+                } else {
+                    preferences.run(held(KeyCode::LeftShift))
+                };
                 let mut control = Controls {
                     use_pressed: use_pressed
                         && matches!(owner, UseOwner::SharedRope | UseOwner::Traversal),
@@ -2069,7 +2074,7 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                     swim: movement.clamp_length_max(1.),
                     rise: f32::from(held(KeyCode::Space)) - f32::from(held(KeyCode::LeftControl)),
                     jump: !overlay_before && pressed(KeyCode::Space),
-                    run: preferences.run(held(KeyCode::LeftShift)),
+                    run: is_running,
                 };
                 interactions.filter_level_controls(&mut control);
                 let controlled = interactions
@@ -2102,7 +2107,7 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                     player.grounded
                         && before_grounded
                         && player.immersion.level == 0
-                        && !preferences.run(held(KeyCode::LeftShift)),
+                        && !is_running,
                     player.jumps > before_jumps,
                     player.landings > before_landings && before_fall < -90.,
                 );
@@ -3518,6 +3523,9 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                 maps[current]
             )))?;
         }
+        if escape_menu.page.is_none() && !menu && !inventory_menu && run_touch_ui {
+            touch_pad.draw(&ui);
+        }
         if options.frames.is_some_and(|limit| frame >= limit) {
             crate::frame_profile::report(&maps[current])?;
             if let Some(path) = &options.capture {
@@ -3527,9 +3535,6 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
         }
         if context_before != (menu, inventory_menu, console.open, paused) {
             input.suppress();
-        }
-        if escape_menu.page.is_none() && !menu && !inventory_menu && run_touch_ui {
-            touch_pad.draw();
         }
         next_frame().await;
     }
