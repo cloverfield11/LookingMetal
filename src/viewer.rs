@@ -561,20 +561,10 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
 
     if run_touch_ui {
         macroquad::input::simulate_mouse_with_touch(false);
-        if options.frames.is_none() && !options.direct_map {
-            let res = crate::launcher::run_launcher(&mut assets, &ui, &mut preferences, &mut launcher_settings).await;
-            if res == crate::launcher::LauncherResult::Quit {
-                return Ok(());
-            }
-        }
         #[cfg(target_os = "ios")]
         {
-            let fps = match launcher_settings.fps_choice {
-                1 => 120,
-                2 => 30,
-                _ => 60,
-            };
-            macroquad::miniquad::native::ios::set_preferred_frames_per_second(fps);
+            // Default to 120 FPS on iOS ProMotion displays
+            macroquad::miniquad::native::ios::set_preferred_frames_per_second(120);
         }
     }
 
@@ -1560,11 +1550,11 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                 && !flying
                 && player.script_motion == 0
                 && !interactions.level_blocks_weapons();
-            let attack_1_pressed = input.action(&preferences, "Mouse 1", true)
+            let attack_1_pressed = (if run_touch_ui { false } else { input.action(&preferences, "Mouse 1", true) })
                 || touch_pad.is_action_pressed("Mouse 1")
                 || ios_pad.state.x_pressed
                 || ios_pad.state.rt_pressed;
-            let attack_2_pressed = input.action(&preferences, "Mouse 2", true)
+            let attack_2_pressed = (if run_touch_ui { false } else { input.action(&preferences, "Mouse 2", true) })
                 || touch_pad.is_action_pressed("Mouse 2")
                 || ios_pad.state.b_pressed
                 || ios_pad.state.lt_pressed;
@@ -1578,11 +1568,11 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                 }
             }
         }
-        let attack_1_held = input.action(&preferences, "Mouse 1", false)
+        let attack_1_held = (if run_touch_ui { false } else { input.action(&preferences, "Mouse 1", false) })
             || touch_pad.is_action_held("Mouse 1")
             || ios_pad.state.x_held
             || ios_pad.state.rt_held;
-        let attack_2_held = input.action(&preferences, "Mouse 2", false)
+        let attack_2_held = (if run_touch_ui { false } else { input.action(&preferences, "Mouse 2", false) })
             || touch_pad.is_action_held("Mouse 2")
             || ios_pad.state.b_held
             || ios_pad.state.lt_held;
@@ -1638,18 +1628,23 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
         );
         let in_cinematic = in_transport || interactions.scripted() || skip_id.is_some();
         let s_ui = (screen_height() / 390.0).clamp(1.0, 3.5);
-        let cutscene_skip_btn = Rect::new(screen_width() - 150.0 * s_ui, 20.0 * s_ui, 130.0 * s_ui, 50.0 * s_ui);
+        let btn_w = (180.0 * s_ui).clamp(180.0, 320.0);
+        let btn_h = (52.0 * s_ui).clamp(52.0, 80.0);
+        let btn_x = (screen_width() - btn_w) * 0.5;
+        let btn_y = screen_height() - btn_h - 22.0 * s_ui;
+        let cutscene_skip_btn = Rect::new(btn_x, btn_y, btn_w, btn_h);
+        let cutscene_hit_area = Rect::new(cutscene_skip_btn.x - 20.0, cutscene_skip_btn.y - 20.0, cutscene_skip_btn.w + 40.0, cutscene_skip_btn.h + 40.0);
         let mut tap_skipped_cutscene = false;
         if in_cinematic {
             for t in macroquad::input::touches() {
-                if cutscene_skip_btn.contains(t.position) && t.phase == TouchPhase::Started {
+                if cutscene_hit_area.contains(t.position) {
                     tap_skipped_cutscene = true;
                     break;
                 }
             }
             if is_mouse_button_pressed(MouseButton::Left) {
                 let mpos = Vec2::from(mouse_position());
-                if cutscene_skip_btn.contains(mpos) {
+                if cutscene_hit_area.contains(mpos) {
                     tap_skipped_cutscene = true;
                 }
             }
@@ -3453,10 +3448,14 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                 set_default_camera();
                 gl_use_default_material();
                 let s_ui = (screen_height() / 390.0).clamp(1.0, 3.5);
-                let skip_btn = Rect::new(screen_width() - 150.0 * s_ui, 20.0 * s_ui, 130.0 * s_ui, 50.0 * s_ui);
-                draw_rectangle(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, Color::new(0.0, 0.0, 0.0, 0.75));
-                draw_rectangle_lines(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, 2.5 * s_ui, Color::new(1.0, 1.0, 1.0, 0.90));
-                ui.center("SKIP >>", skip_btn, 16.0 * s_ui, WHITE);
+                let btn_w = (180.0 * s_ui).clamp(180.0, 320.0);
+                let btn_h = (52.0 * s_ui).clamp(52.0, 80.0);
+                let btn_x = (screen_width() - btn_w) * 0.5;
+                let btn_y = screen_height() - btn_h - 22.0 * s_ui;
+                let skip_btn = Rect::new(btn_x, btn_y, btn_w, btn_h);
+                draw_rectangle(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, Color::new(0.04, 0.02, 0.03, 0.85));
+                draw_rectangle_lines(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, 2.5 * s_ui, Color::new(0.95, 0.78, 0.28, 0.95));
+                ui.center("SKIP  >>", skip_btn, 19.0 * s_ui, WHITE);
             }
         }
         if audio.settings.muted && help && !inventory_menu && !console_input {

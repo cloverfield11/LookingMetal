@@ -429,16 +429,18 @@ impl Ui {
         );
     }
     pub fn cursor(&self) {
-        let p = mouse_position();
-        let scale = (screen_height() / 600.).clamp(0.75, 2.);
+        self.cursor_at(Vec2::from(mouse_position()));
+    }
+    pub fn cursor_at(&self, pos: Vec2) {
+        let scale = (screen_height() / 600.).clamp(0.85, 2.2);
         draw_texture_ex(
             &self.cursor,
-            p.0,
-            p.1,
+            pos.x,
+            pos.y,
             WHITE,
             DrawTextureParams {
                 dest_size: Some(
-                    vec2(24., 24. * self.cursor.height() / self.cursor.width()) * scale,
+                    vec2(26., 26. * self.cursor.height() / self.cursor.width()) * scale,
                 ),
                 ..Default::default()
             },

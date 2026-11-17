@@ -302,18 +302,23 @@ pub async fn play(
             }
         }
         let s_ui = (screen_height() / 390.0).clamp(1.0, 3.5);
-        let skip_btn = Rect::new(screen_width() - 150.0 * s_ui, 20.0 * s_ui, 130.0 * s_ui, 50.0 * s_ui);
+        let btn_w = (180.0 * s_ui).clamp(180.0, 320.0);
+        let btn_h = (52.0 * s_ui).clamp(52.0, 80.0);
+        let btn_x = (screen_width() - btn_w) * 0.5;
+        let btn_y = screen_height() - btn_h - 22.0 * s_ui;
+        let skip_btn = Rect::new(btn_x, btn_y, btn_w, btn_h);
+        let hit_area = Rect::new(skip_btn.x - 20.0, skip_btn.y - 20.0, skip_btn.w + 40.0, skip_btn.h + 40.0);
         let touches = macroquad::input::touches();
         let mut tap_skipped = false;
         for t in &touches {
-            if skip_btn.contains(t.position) && t.phase == TouchPhase::Started {
+            if hit_area.contains(t.position) {
                 tap_skipped = true;
                 break;
             }
         }
         if is_mouse_button_pressed(MouseButton::Left) {
             let mpos = Vec2::from(mouse_position());
-            if skip_btn.contains(mpos) {
+            if hit_area.contains(mpos) {
                 tap_skipped = true;
             }
         }
@@ -366,10 +371,10 @@ pub async fn play(
             },
         );
         skip.draw(ui, if input.using_pad { "A" } else { "Enter" });
-        // Draw touch SKIP button
-        draw_rectangle(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, Color::new(0.0, 0.0, 0.0, 0.65));
-        draw_rectangle_lines(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, 2.0, Color::new(1.0, 1.0, 1.0, 0.85));
-        ui.center("SKIP >>", skip_btn, 18., WHITE);
+        // Draw touch SKIP button (Bottom-center, prominent and easily clickable)
+        draw_rectangle(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, Color::new(0.04, 0.02, 0.03, 0.85));
+        draw_rectangle_lines(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, 2.5 * s_ui, Color::new(0.95, 0.78, 0.28, 0.95));
+        ui.center("SKIP  >>", skip_btn, 19.0 * s_ui, WHITE);
 
         if !active {
             ui.paused(if input.using_pad {

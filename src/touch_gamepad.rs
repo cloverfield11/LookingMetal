@@ -10,15 +10,12 @@ pub enum TouchButton {
     X, // Primary Attack (Mouse 1)
     Y, // Interact / Action (E)
     // Shoulders
-    LB, // Run toggle (Shift)
+    LB, // Previous weapon (Wheel Up)
     LT, // Alt Attack (Mouse 2)
-    RB, // Next weapon
+    RB, // Next weapon (Wheel Down)
     RT, // Primary Attack (Mouse 1)
-    // D-Pad
-    DpadLeft,
-    DpadRight,
-    DpadUp,
-    DpadDown,
+    // Dedicated Run button
+    Run, // Run toggle / hold (Shift)
     // System buttons
     Start,  // Menu / Pause (+)
     Select, // Cheshire Cat Hint (-)
@@ -245,7 +242,7 @@ impl TouchGamepad {
                     self.pressed_buttons.insert(btn);
                     self.held_buttons.insert(btn);
 
-                    if btn == TouchButton::LB {
+                    if btn == TouchButton::Run {
                         self.run_toggled = !self.run_toggled;
                     }
                 }
@@ -312,19 +309,15 @@ impl TouchGamepad {
         // Y (top, yellow): Interact / Action (E)
         btns.push((TouchButton::Y, vec2(cx, cy - spacing), face_r));
 
-        // 2. D-Pad (Left side to the right of left stick)
-        let dpad_cx = 230.0 * s;
-        let dpad_cy = h - 95.0 * s;
-        let dspacing = 38.0 * s;
-        let dpad_r = 21.0 * s;
-        btns.push((TouchButton::DpadUp, vec2(dpad_cx, dpad_cy - dspacing), dpad_r));
-        btns.push((TouchButton::DpadDown, vec2(dpad_cx, dpad_cy + dspacing), dpad_r));
-        btns.push((TouchButton::DpadLeft, vec2(dpad_cx - dspacing, dpad_cy), dpad_r));
-        btns.push((TouchButton::DpadRight, vec2(dpad_cx + dspacing, dpad_cy), dpad_r));
+        // 2. Dedicated RUN button (to the right of left stick, replacing old D-pad)
+        let run_cx = 215.0 * s;
+        let run_cy = h - 95.0 * s;
+        let run_r = 30.0 * s;
+        btns.push((TouchButton::Run, vec2(run_cx, run_cy), run_r));
 
         // 3. Top Triggers & Shoulders
         let trig_r = 25.0 * s;
-        // LT (Alt Attack) & LB (Run toggle) - Top Left
+        // LT (Alt Attack) & LB (Previous weapon) - Top Left
         btns.push((TouchButton::LT, vec2(60.0 * s, 38.0 * s), trig_r));
         btns.push((TouchButton::LB, vec2(145.0 * s, 38.0 * s), trig_r));
 
@@ -383,7 +376,11 @@ impl TouchGamepad {
         match key {
             KeyCode::Space => self.held_buttons.contains(&TouchButton::A),
             KeyCode::E => self.held_buttons.contains(&TouchButton::Y),
-            KeyCode::LeftShift => self.run_toggled,
+            KeyCode::LeftShift => {
+                self.run_toggled
+                    || self.held_buttons.contains(&TouchButton::Run)
+                    || (self.lstick_vector.length() > 0.88)
+            }
             KeyCode::C => self.held_buttons.contains(&TouchButton::Select),
             KeyCode::Escape => self.held_buttons.contains(&TouchButton::Start),
             _ => false,
@@ -397,6 +394,7 @@ impl TouchGamepad {
         match key {
             KeyCode::Space => self.pressed_buttons.contains(&TouchButton::A),
             KeyCode::E => self.pressed_buttons.contains(&TouchButton::Y),
+            KeyCode::LeftShift => self.pressed_buttons.contains(&TouchButton::Run),
             KeyCode::C => self.pressed_buttons.contains(&TouchButton::Select),
             KeyCode::Escape => self.pressed_buttons.contains(&TouchButton::Start),
             _ => false,
@@ -416,7 +414,11 @@ impl TouchGamepad {
             }
             "Space" | "Jump / climb" => self.held_buttons.contains(&TouchButton::A),
             "E" | "Interact" => self.held_buttons.contains(&TouchButton::Y),
-            "Shift" | "Run / walk" => self.run_toggled,
+            "Shift" | "Run / walk" => {
+                self.run_toggled
+                    || self.held_buttons.contains(&TouchButton::Run)
+                    || (self.lstick_vector.length() > 0.88)
+            }
             "C" | "Cheshire hint" => self.held_buttons.contains(&TouchButton::Select),
             "Escape" | "Pause" => self.held_buttons.contains(&TouchButton::Start),
             _ => false,
@@ -434,17 +436,11 @@ impl TouchGamepad {
             "Mouse 2" | "Alternate attack" => {
                 self.pressed_buttons.contains(&TouchButton::B) || self.pressed_buttons.contains(&TouchButton::LT)
             }
-            "Wheel Down" | "Next toy" => {
-                self.pressed_buttons.contains(&TouchButton::RB)
-                    || self.pressed_buttons.contains(&TouchButton::DpadRight)
-                    || self.pressed_buttons.contains(&TouchButton::DpadDown)
-            }
-            "Wheel Up" => {
-                self.pressed_buttons.contains(&TouchButton::DpadLeft)
-                    || self.pressed_buttons.contains(&TouchButton::DpadUp)
-            }
+            "Wheel Down" | "Next toy" => self.pressed_buttons.contains(&TouchButton::RB),
+            "Wheel Up" => self.pressed_buttons.contains(&TouchButton::LB),
             "Space" | "Jump / climb" => self.pressed_buttons.contains(&TouchButton::A),
             "E" | "Interact" => self.pressed_buttons.contains(&TouchButton::Y),
+            "Shift" | "Run / walk" => self.pressed_buttons.contains(&TouchButton::Run),
             "C" | "Cheshire hint" => self.pressed_buttons.contains(&TouchButton::Select),
             "Escape" | "Pause" => self.pressed_buttons.contains(&TouchButton::Start),
             _ => false,
@@ -509,10 +505,14 @@ impl TouchGamepad {
         draw_text(r_label, rknob.x - rdims.width * 0.5, rknob.y + rdims.height * 0.35, 16.0 * s, Color::new(0.1, 0.1, 0.1, 0.95));
 
         // 3. Draw All Controller Buttons (ABXY, Shoulders, D-Pad, System)
+        let is_running = self.run_toggled
+            || self.held_buttons.contains(&TouchButton::Run)
+            || (self.lstick_vector.length() > 0.88);
+
         let buttons = self.button_layouts(w, h, s);
         for (btn, center, radius) in buttons {
             let is_held = match btn {
-                TouchButton::LB => self.run_toggled,
+                TouchButton::Run => is_running,
                 _ => self.held_buttons.contains(&btn),
             };
 
@@ -522,7 +522,7 @@ impl TouchGamepad {
                     TouchButton::B => Color::new(0.90, 0.20, 0.20, 0.90), // Red (Xbox B)
                     TouchButton::X => Color::new(0.20, 0.45, 0.95, 0.90), // Blue (Xbox X)
                     TouchButton::Y => Color::new(0.95, 0.80, 0.15, 0.90), // Yellow (Xbox Y)
-                    TouchButton::LB => Color::new(0.25, 0.70, 0.35, 0.85),
+                    TouchButton::Run => Color::new(0.95, 0.55, 0.10, 0.95), // Glowing Amber
                     _ => Color::new(0.85, 0.35, 0.35, 0.85),
                 }
             } else {
@@ -537,6 +537,7 @@ impl TouchGamepad {
                     TouchButton::B => Color::new(0.9, 0.3, 0.3, 0.85),
                     TouchButton::X => Color::new(0.3, 0.6, 1.0, 0.85),
                     TouchButton::Y => Color::new(1.0, 0.85, 0.3, 0.85),
+                    TouchButton::Run => Color::new(0.95, 0.70, 0.25, 0.90),
                     _ => Color::new(1.0, 1.0, 1.0, 0.70),
                 }
             };
@@ -550,19 +551,18 @@ impl TouchGamepad {
                 TouchButton::X => "X",
                 TouchButton::Y => "Y",
                 TouchButton::LT => "LT",
-                TouchButton::LB => if self.run_toggled { "RUN" } else { "WALK" },
+                TouchButton::LB => "PREV",
                 TouchButton::RT => "RT",
-                TouchButton::RB => "RB",
-                TouchButton::DpadUp => "^",
-                TouchButton::DpadDown => "v",
-                TouchButton::DpadLeft => "<",
-                TouchButton::DpadRight => ">",
+                TouchButton::RB => "NEXT",
+                TouchButton::Run => if is_running { "RUN" } else { "WALK" },
                 TouchButton::Start => "+",
                 TouchButton::Select => "-",
             };
 
             let font_size = if label == "RUN" || label == "WALK" {
-                12.0 * s
+                13.0 * s
+            } else if label == "PREV" || label == "NEXT" {
+                11.0 * s
             } else if radius >= 24.0 * s {
                 18.0 * s
             } else {

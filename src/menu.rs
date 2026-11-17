@@ -411,6 +411,10 @@ pub struct Menu {
     mirror: crate::npc::Puppet,
     mirror_target: RenderTarget,
     material: crate::character::SkinMaterial,
+    touchpad_cursor: Vec2,
+    touchpad_touch_id: Option<u64>,
+    touchpad_last_pos: Vec2,
+    touchpad_dragged: f32,
 }
 impl Menu {
     pub fn load(assets: &mut Assets) -> Result<Self> {
@@ -589,6 +593,10 @@ impl Menu {
                 },
             ),
             material: crate::character::skin_material()?,
+            touchpad_cursor: Vec2::ZERO,
+            touchpad_touch_id: None,
+            touchpad_last_pos: Vec2::ZERO,
+            touchpad_dragged: 0.0,
         })
     }
     pub fn open(&mut self, page: Page, preferences: &Preferences, audio: audio::Settings) {
@@ -1632,15 +1640,84 @@ impl Menu {
             let buttons = self.buttons(page);
             self.selected = self.selected.min(buttons.len().saturating_sub(1));
             audio.update(0., listener, yaw, true, true);
-            let canvas = Canvas::new(screen_width(), screen_height());
-            // iOS deliberately disables touch-to-mouse emulation so gameplay
-            // can track multiple fingers.  Menus still need first-class tap
-            // activation, otherwise the front-end is impossible to enter on
-            // an iPhone before the in-game overlay is available.
-            let touch_tap = macroquad::input::touches().iter()
-                .find(|touch| touch.phase == TouchPhase::Started)
-                .map(|touch| touch.position);
-            let mouse = touch_tap.unwrap_or_else(|| Vec2::from(mouse_position()));
+            let sw = screen_width();
+            let sh = screen_height();
+            if self.touchpad_cursor == Vec2::ZERO {
+                self.touchpad_cursor = vec2(sw * 0.5, sh * 0.5);
+            }
+
+            let canvas = Canvas::new(sw, sh);
+            let touches = macroquad::input::touches();
+            let mut touch_clicked = false;
+            let mut touch_holding = false;
+
+            let resume_btn = Rect::new((sw - 220.0) * 0.5, sh - 48.0, 220.0, 38.0);
+            let resume_hit = Rect::new(resume_btn.x - 15.0, resume_btn.y - 15.0, resume_btn.w + 30.0, resume_btn.h + 30.0);
+            let mut resume_quick_clicked = false;
+
+            if !touches.is_empty() {
+                if let Some(active_id) = self.touchpad_touch_id {
+                    if let Some(t) = touches.iter().find(|t| t.id == active_id) {
+                        match t.phase {
+                            TouchPhase::Moved => {
+                                let delta = t.position - self.touchpad_last_pos;
+                                self.touchpad_last_pos = t.position;
+                                self.touchpad_dragged += delta.length();
+                                // Touchpad cursor drag (1.25x trackpad sensitivity)
+                                self.touchpad_cursor += delta * 1.25;
+                                self.touchpad_cursor.x = self.touchpad_cursor.x.clamp(0.0, sw);
+                                self.touchpad_cursor.y = self.touchpad_cursor.y.clamp(0.0, sh);
+                                touch_holding = true;
+                            }
+                            TouchPhase::Stationary => {
+                                touch_holding = true;
+                            }
+                            TouchPhase::Ended | TouchPhase::Cancelled => {
+                                if self.touchpad_dragged < 15.0 {
+                                    if !self.frontend && page == Page::Main && resume_hit.contains(t.position) {
+                                        resume_quick_clicked = true;
+                                    } else {
+                                        let tap_canvas = canvas.pointer(t.position);
+                                        if let Some(i) = buttons.iter().position(|b| b.rect.contains(tap_canvas)) {
+                                            self.touchpad_cursor = t.position;
+                                            self.selected = i;
+                                            touch_clicked = true;
+                                        } else {
+                                            touch_clicked = true;
+                                        }
+                                    }
+                                }
+                                self.touchpad_touch_id = None;
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        self.touchpad_touch_id = None;
+                    }
+                } else if let Some(t) = touches.iter().find(|t| t.phase == TouchPhase::Started) {
+                    self.touchpad_touch_id = Some(t.id);
+                    self.touchpad_last_pos = t.position;
+                    self.touchpad_dragged = 0.0;
+                    if !self.frontend && page == Page::Main && resume_hit.contains(t.position) {
+                        resume_quick_clicked = true;
+                    } else {
+                        let direct_canvas = canvas.pointer(t.position);
+                        if let Some(i) = buttons.iter().position(|b| b.rect.contains(direct_canvas)) {
+                            self.touchpad_cursor = t.position;
+                            self.selected = i;
+                        }
+                    }
+                }
+            } else {
+                self.touchpad_touch_id = None;
+            }
+
+            let mpos = Vec2::from(mouse_position());
+            if (mpos - self.previous_pointer).length_squared() > 1.0 && !cfg!(target_os = "ios") {
+                self.touchpad_cursor = mpos;
+            }
+
+            let mouse = self.touchpad_cursor;
             let hit = buttons
                 .iter()
                 .position(|b| b.rect.contains(canvas.pointer(mouse)));
@@ -1676,7 +1753,7 @@ impl Menu {
                             self.selected = i;
                         }
                     }
-                    if is_mouse_button_down(MouseButton::Left) {
+                    if touch_holding || is_mouse_button_down(MouseButton::Left) {
                         self.mouse_navigation = true;
                         if let Some(i) = hit {
                             if let Click::Row(row) = buttons[i].click {
@@ -1698,7 +1775,9 @@ impl Menu {
                         self.mouse_navigation = false;
                         self.selected = (self.selected + buttons.len() - 1) % buttons.len();
                     }
-                    let click = if page == Page::Main && input.ui(KeyCode::Tab) {
+                    let click = if resume_quick_clicked {
+                        Some(Click::Action(Action::Resume))
+                    } else if page == Page::Main && input.ui(KeyCode::Tab) {
                         Some(Click::Action(Action::Chapters))
                     } else if page == Page::Main && is_key_pressed(KeyCode::C) {
                         Some(Click::Action(Action::Coop))
@@ -1716,7 +1795,7 @@ impl Menu {
                         Some(Click::Page(Page::Controls))
                     } else if page == Page::Settings && is_key_pressed(KeyCode::Key4) {
                         Some(Click::Page(Page::Game))
-                    } else if touch_tap.is_some() || is_mouse_button_pressed(MouseButton::Left) {
+                    } else if touch_clicked || is_mouse_button_pressed(MouseButton::Left) {
                         hit.map(|i| buttons[i].click)
                     } else if input.ui(KeyCode::Enter) {
                         self.mouse_navigation = false;
@@ -1881,8 +1960,13 @@ impl Menu {
                 crate::ui_probe::screen(&format!("menu-{page:?}"), &buttons.iter()
                     .map(|b| (format!("{:?}", b.click), b.rect)).collect::<Vec<_>>(), &self.message);
             }
+            if !self.frontend && page == Page::Main {
+                draw_rectangle(resume_btn.x, resume_btn.y, resume_btn.w, resume_btn.h, Color::new(0.08, 0.40, 0.15, 0.90));
+                draw_rectangle_lines(resume_btn.x, resume_btn.y, resume_btn.w, resume_btn.h, 2.0, Color::new(0.3, 0.9, 0.4, 0.95));
+                self.ui.center("<< RESUME GAME", resume_btn, 16.0, WHITE);
+            }
             if focused {
-                self.ui.cursor();
+                self.ui.cursor_at(self.touchpad_cursor);
             }
             if focused && is_key_pressed(KeyCode::F12) {
                 let path = std::path::PathBuf::from(format!(

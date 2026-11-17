@@ -3,11 +3,11 @@
 > **Native Apple Metal port of American McGee's Alice (2000) for iOS and Apple Silicon macOS.**
 
 [![Platform](https://img.shields.io/badge/Platforms-iOS%2015%2B%20%7C%20macOS%20ARM-blue.svg)](https://apple.com)
-[![Graphics](https://img.shields.io/badge/Graphics-Apple%20Metal%203-orange.svg)](https://developer.apple.com/metal/)
+[![Graphics](https://img.shields.io/badge/Graphics-Apple%20Metal%20%26%20MetalKit-orange.svg)](https://developer.apple.com/metal/)
 [![Engine](https://img.shields.io/badge/Language-Rust-red.svg)](https://www.rust-lang.org)
 [![Framerate](https://img.shields.io/badge/Display-120%20FPS%20ProMotion-brightgreen.svg)]()
 
-**LookingMetal** is a specialized fork of [LookingGlass](https://github.com/LookingGlass), engineered to bring **American McGee's Alice** natively to modern Apple hardware (iPhone, iPad, and Apple Silicon Macs) using **Apple Metal 3**.
+**LookingMetal** is a specialized fork of [LookingGlass](https://github.com/LookingGlass), engineered to bring **American McGee's Alice** natively to modern Apple hardware (iPhone, iPad, and Apple Silicon Macs) using **Native Apple Metal & MetalKit**.
 
 No x86 emulation, UTM virtual machines, or translation layers — this is a pure native `aarch64` port running at a smooth **120 FPS on ProMotion** displays.
 
@@ -15,25 +15,22 @@ No x86 emulation, UTM virtual machines, or translation layers — this is a pure
 
 ## ✨ Features
 
-- ⚡️ **Native Metal 3 Graphics:** Direct hardware acceleration on Apple A-series and M-series chips.
+- ⚡️ **Native Apple Metal Graphics:** Direct hardware acceleration via Apple MetalKit on A-series and M-series chips.
 - 📱 **Smooth 120 FPS (ProMotion):** Fully supports high-refresh displays (iPhone 13 Pro and newer, iPad Pro, MacBook Pro).
-- 🎮 **Full Virtual Controller (Xbox / Nintendo Switch Layout):**
+- 🎮 **Ergonomic Virtual Controller:**
   - **Left Analog Stick (L):** 360° locomotion with a floating/dynamic center under your thumb.
+  - **Dedicated RUN Button:** Convenient Sprint / Walk toggle right beside the analog stick (also auto-sprints at outer stick radius).
   - **Right Analog Stick (R):** Continuous 360° camera panning with quadratic acceleration curve.
-  - **Free Swipe Aiming:** Drag anywhere on the empty right half of the screen for precision view adjustments.
   - **ABXY Diamond:** `A` — Jump / Climb, `X` — Primary Attack, `B` — Alternate Attack, `Y` — Interact / Use (Key `E`).
-  - **D-Pad:** Next and previous weapon cycling.
-  - **Triggers & Bumpers:** `LT` / `RT` (Attacks), `LB` (Run / Walk toggle), `RB` (Next weapon).
+  - **Triggers & Bumpers:** `LT` / `RT` (Attacks), `LB` (Previous toy), `RB` (Next toy).
   - **System Buttons:** `+` (Menu / Pause / Esc), `-` (Cheshire Cat hint / C).
-  - **Hardware Multitouch:** Independent touch pointer tracking allows moving, aiming, and jumping at the same time.
+  - **Zero False Actions:** In-game attacks and actions are restricted strictly to virtual/physical gamepad controls; casual glass taps will never trigger false attacks.
+- 🖱️ **Full Touchpad Menu Navigation:**
+  - Swipe anywhere on the screen like a laptop trackpad to glide the Alice cursor across menus with natural momentum.
+  - Tap anywhere to click hovered items, or tap directly on menu buttons.
+  - In-game escape menu includes a prominent one-touch `[ << RESUME GAME ]` return button.
 - 🕹️ **Physical Controller Support:** Native Apple `GameController.framework` bridge. Connecting an Xbox, PS5 DualSense, Switch Pro, Backbone, or Razer Kishi controller automatically hides on-screen touch buttons.
-- ⚙️ **Touch-Friendly Pre-Game Launcher:**
-  - Target Frame Rate (60 FPS / 120 FPS ProMotion / 30 FPS Power Save).
-  - Metal Performance HUD toggle.
-  - Aspect Ratio (Fullscreen 19.5:9 / 16:9 Widescreen / 4:3 Classic).
-  - Controller Mode (Touch + Physical / Physical Controller Only).
-  - On-Screen Button Scale (Large 125% / Standard 100% / Huge 150%).
-- 🎬 **Dedicated Cutscene Skip Button:** Accidental screen taps will not skip story sequences. Skipping requires pressing the prominent `[ SKIP >> ]` on-screen button or holding controller A / Enter.
+- 🎬 **Prominent Bottom-Center Cutscene Skip Button:** Accidental screen taps will not skip story sequences. A large, convenient `[ SKIP >> ]` button is placed at the bottom center of the display.
 - 📦 **Sideloading Ready:** Mach-O header automatically patched to SDK 16.5, eliminating dyld crashes in **LiveContainer**, **TrollStore**, **AltStore**, and **SideStore**.
 
 ---
