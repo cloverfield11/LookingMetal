@@ -94,8 +94,8 @@ build_ios() {
     OUTPUT_IPA="$DIST_DIR/Alice_LookingMetal_iOS.ipa"
     DOWNLOADS_IPA="$HOME/Downloads/Alice_LookingMetal_iOS.ipa"
 
-    echo -e "${CYAN}[+] Compiling release binary for aarch64-apple-ios...${NC}"
-    cargo build --release --target aarch64-apple-ios
+    echo -e "${CYAN}[+] Compiling release binary for aarch64-apple-ios (with 16MB stack)...${NC}"
+    RUSTFLAGS="-C link-arg=-Wl,-stack_size,0x1000000" cargo build --release --target aarch64-apple-ios
 
     BIN_PATH="$ROOT_DIR/target/aarch64-apple-ios/release/looking-metal"
     if [ ! -f "$BIN_PATH" ]; then
