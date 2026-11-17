@@ -74,9 +74,10 @@ check_assets() {
         if [ -d "$FALLBACK_DIR" ]; then
             echo -e "${GREEN}[+] Found assets in Downloads! Importing into base/...${NC}"
             cp "$FALLBACK_DIR/switch/LookingGlass/base/"*.pk3 "$BASE_DIR/" 2>/dev/null || true
+            cp "$FALLBACK_DIR/Russian Language Mod/switch/LookingGlass/base/"*.pk3 "$BASE_DIR/" 2>/dev/null || true
         else
             echo -e "${RED}[ERROR] Game assets are missing!${NC}"
-            echo "Please place pak0.pk3 .. pak5.pk3 into:"
+            echo "Please place pak0.pk3 .. pak5.pk3 (and optional pak6_Ru*.pk3) into:"
             echo "  $BASE_DIR/"
             exit 1
         fi

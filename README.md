@@ -49,6 +49,11 @@ Place your original American McGee's Alice `.pk3` files into the `base/` directo
 - `pak4_english.pk3`
 - `pak5_mod.pk3`
 
+#### Optional: Russian Localization (SoftClub) / Русская озвучка
+If you want to play with the legendary Russian voice acting and translated text from SoftClub:
+- Simply also add `pak6_RuSound.pk3`, `pak6_RuText.pk3`, and `pak6_RuTextures.pk3` into `base/`.
+- LookingMetal will automatically detect and load them. You can switch or confirm language directly in the launcher!
+
 ### 2. Build for iPhone & iPad (IPA)
 Run:
 ```bash
