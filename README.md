@@ -1,211 +1,133 @@
-# Looking Glass — American McGee's Alice Re-Remaster
+# 🪞 LookingMetal
 
-**Play the whole game, from the opening to the final boss, ending and credits.**
-All **39 campaign visits**, including return visits, are playable in this
-experimental Windows preview.
+> **Native Apple Metal port of American McGee's Alice (2000) for iOS and Apple Silicon macOS.**
 
-Looking Glass is an unofficial **re-remaster of American McGee's Alice**: it
-brings the **2011 rerelease's game data** into a newly written, open-source Rust
-engine with guided setup, configurable controller support and modern display
-options. It uses your own compatible game files and runs independently of the
-original game executable, gameplay DLL and Alice: Madness Returns.
+[![Platform](https://img.shields.io/badge/Platforms-iOS%2015%2B%20%7C%20macOS%20ARM-blue.svg)](https://apple.com)
+[![Graphics](https://img.shields.io/badge/Graphics-Apple%20Metal%203-orange.svg)](https://developer.apple.com/metal/)
+[![Engine](https://img.shields.io/badge/Language-Rust-red.svg)](https://www.rust-lang.org)
+[![Framerate](https://img.shields.io/badge/Display-120%20FPS%20ProMotion-brightgreen.svg)]()
 
-[Visit the Looking Glass website](https://looking-glass-project.github.io/LookingGlass/) ·
-**[Download for Windows — play the full campaign](https://github.com/looking-glass-project/LookingGlass/releases/download/v0.33.0-preview.4/LookingGlass-Windows-x64-v0.33.0-preview.4.zip)** ·
-[Watch the 78-second story showcase](#gameplay-showcase) ·
-[Report a bug](https://github.com/looking-glass-project/LookingGlass/issues/new/choose)
+**LookingMetal** is a specialized fork of [LookingGlass](https://github.com/LookingGlass), engineered to bring **American McGee's Alice** natively to modern Apple hardware (iPhone, iPad, and Apple Silicon Macs) using **Apple Metal 3**.
 
-**One download, three steps:** save the ZIP, choose **Extract All**,
-then open **Launch.cmd** in the extracted LookingGlass folder. Guided setup
-handles the separate game files. The link above downloads the right Windows
-package directly; no need to choose from a release file list.
+No x86 emulation, UTM virtual machines, or translation layers — this is a pure native `aarch64` port running at a smooth **120 FPS on ProMotion** displays.
 
-This is an experimental preview, with remaining fidelity and device-testing gaps.
-The engine download includes no original game data. You need compatible files
-you are entitled to use. **American McGee's Alice belongs to EA; original game
-content remains with EA and its respective rights holders.** Looking Glass claims
-no ownership of that content. [Rights and distribution notice](LEGAL.md).
+---
 
-## Two-player co-op
+## ✨ Features
 
-Both players need **v0.33.0-preview.4**. It includes the latest setup, menu and
-latency fixes; remote guest stutter and post-cutscene lag are still being
-verified. See the [playtest fixes and evidence](docs/COOP_PLAYTEST_FIXES.md).
+- ⚡️ **Native Metal 3 Graphics:** Direct hardware acceleration on Apple A-series and M-series chips.
+- 📱 **Smooth 120 FPS (ProMotion):** Fully supports high-refresh displays (iPhone 13 Pro and newer, iPad Pro, MacBook Pro).
+- 🎮 **Full Virtual Controller (Xbox / Nintendo Switch Layout):**
+  - **Left Analog Stick (L):** 360° locomotion with a floating/dynamic center under your thumb.
+  - **Right Analog Stick (R):** Continuous 360° camera panning with quadratic acceleration curve.
+  - **Free Swipe Aiming:** Drag anywhere on the empty right half of the screen for precision view adjustments.
+  - **ABXY Diamond:** `A` — Jump / Climb, `X` — Primary Attack, `B` — Alternate Attack, `Y` — Interact / Use (Key `E`).
+  - **D-Pad:** Next and previous weapon cycling.
+  - **Triggers & Bumpers:** `LT` / `RT` (Attacks), `LB` (Run / Walk toggle), `RB` (Next weapon).
+  - **System Buttons:** `+` (Menu / Pause / Esc), `-` (Cheshire Cat hint / C).
+  - **Hardware Multitouch:** Independent touch pointer tracking allows moving, aiming, and jumping at the same time.
+- 🕹️ **Physical Controller Support:** Native Apple `GameController.framework` bridge. Connecting an Xbox, PS5 DualSense, Switch Pro, Backbone, or Razer Kishi controller automatically hides on-screen touch buttons.
+- ⚙️ **Touch-Friendly Pre-Game Launcher:**
+  - Target Frame Rate (60 FPS / 120 FPS ProMotion / 30 FPS Power Save).
+  - Metal Performance HUD toggle.
+  - Aspect Ratio (Fullscreen 19.5:9 / 16:9 Widescreen / 4:3 Classic).
+  - Controller Mode (Touch + Physical / Physical Controller Only).
+  - On-Screen Button Scale (Large 125% / Standard 100% / Huge 150%).
+- 🎬 **Dedicated Cutscene Skip Button:** Accidental screen taps will not skip story sequences. Skipping requires pressing the prominent `[ SKIP >> ]` on-screen button or holding controller A / Enter.
+- 📦 **Sideloading Ready:** Mach-O header automatically patched to SDK 16.5, eliminating dyld crashes in **LiveContainer**, **TrollStore**, **AltStore**, and **SideStore**.
 
-Open the regular **Launch.cmd**, then choose **Co-op** from the main menu or
-ESC. **Host** creates an internet invite link; **Join** accepts it. Blue and red
-Alice have their own health, resources and cameras. All 39 campaign visits have
-normal paired progression coverage, including swimming, leaf rides and the ending.
+---
 
-Load an existing solo save and choose **Host this game**, or choose **Continue
-co-op** to resume a shared checkpoint. A fallen player spectates their partner
-and revives after ten seconds; a shared death restores the last checkpoint.
-See [co-op setup and saves](docs/COOP_QUICKSTART.md) and
-[verification and polishing limits](docs/COOP_PLAYABLE.md).
+## 🚀 Quick Start (One-Click Build)
 
-## Gameplay showcase
+### 1. Game Data Setup
+Place your original American McGee's Alice `.pk3` files into the `base/` directory:
+- `pak0.pk3`
+- `pak1_large.pk3` (or `pak1.pk3`)
+- `pak2.pk3`
+- `pak3.pk3`
+- `pak4_english.pk3`
+- `pak5_mod.pk3`
 
-[![Watch the story and gameplay showcase: Cheshire, the Rabbit and Pandemonium's minecart](docs/media/gameplay/story-preview.gif)](https://looking-glass-project.github.io/LookingGlass/#showcase)
+### 2. Build for iPhone & iPad (IPA)
+Run:
+```bash
+./build.sh ios
+```
+The script will automatically:
+1. Verify and install any missing Rust components (`aarch64-apple-ios`).
+2. Compile the release binary.
+3. Patch the Mach-O SDK header for LiveContainer compatibility.
+4. Generate application icons and `Info.plist`.
+5. Package the game data and apply ad-hoc codesigning.
+6. Output the signed package:
+   - `dist/Alice_LookingMetal_iOS.ipa` (also mirrored to `~/Downloads/`).
 
-**[Watch the new 78-second showcase in your browser](https://looking-glass-project.github.io/LookingGlass/#showcase)** ·
-[Download the video](https://github.com/looking-glass-project/LookingGlass/releases/download/v0.32.0-preview.1/LookingGlass-Story-Showcase.mp4)
+Install the generated `.ipa` using **LiveContainer**, **TrollStore**, **AltStore**, or your preferred sideloading method.
 
-Cutscenes from the **first two chapters — Dementia and Pandemonium** lead into
-combat and exploration. Meet the Rabbit and Cheshire Cat, collect the Vorpal
-Blade, hear the Gnome's warning through subtitles, and take the minecart ride.
-Actual in-engine footage at normal speed, edited with titles and transitions;
-720p, 30 fps. **The recordings are silent; dialogue subtitles are enabled.**
+---
 
-Want more of the opening story? Two separate one-minute edits:
+### 3. macOS Native Build & Testing
 
-- **[Chapter 1: Dementia](https://github.com/looking-glass-project/LookingGlass/releases/download/v0.32.0-preview.1/LookingGlass-Chapter-1-Dementia.mp4)** — Alice's arrival, Cheshire, the Blade and the little door.
-- **[Chapter 2: Pandemonium](https://github.com/looking-glass-project/LookingGlass/releases/download/v0.32.0-preview.1/LookingGlass-Chapter-2-Pandemonium.mp4)** — the Gnome's warning and the minecart sequence.
+- **Run natively on macOS (Keyboard + Mouse):**
+  ```bash
+  ./build.sh run
+  ```
+  *Controls: WASD — Move, Mouse — Look around, Space — Jump, Left/Right Click — Attacks, Tab — Level Select, P — Pause/Release Cursor.*
 
-[Recording and editing details](docs/media/gameplay/README.md#story-and-opening-chapter-videos).
+- **Run on macOS in Mobile Touch Simulation Mode:**
+  ```bash
+  ./build.sh run-touch
+  ```
+  *Opens the mobile launcher and displays the on-screen Xbox/Switch virtual controls for rapid UI testing on desktop.*
 
-## Why try Looking Glass?
+- **Build standalone macOS Application (`.app`):**
+  ```bash
+  ./build.sh mac
+  ```
 
-The practical benefits are easier setup, flexible controls and a game engine
-that can be inspected and improved. These conveniences are built into this
-project:
+---
 
-| Feature | What it means for you |
-| --- | --- |
-| **Full playable campaign** | Start a new game and play all 39 story visits through the final boss, ending and credits, with campaign progress and saves carried between levels. |
-| **Guided installation** | One setup window finds, optionally downloads, checks and unpacks compatible game files, then starts the game. No compiler, separate extractor or changes to the original executable are needed. |
-| **Built-in controller support** | Play and navigate menus with an Xbox/XInput controller. Rebind buttons, adjust stick sensitivity and deadzones, and invert the camera. An active controller disconnect pauses play. |
-| **Modern display and camera options** | Choose window resolutions including 1080p, 1440p and 4K, or borderless fullscreen at your desktop resolution. Adjust third-person camera distance, mouse sensitivity and look inversion in the settings. |
-| **Easy chapter replay** | Browse all 39 story visits, including return visits, and choose a difficulty from the chapter menu. Each selection starts a fresh visit; normal exits carry your campaign forward. |
-| **Save protection and recovery** | Four manual slots, quick save and a separate autosave have picture previews. Each slot keeps a previous validated copy, which the loader can recover if the current file is damaged. |
-| **Source that can be improved** | The newly written engine code is available in this project under MIT. Contributors can inspect behavior, fix bugs and extend it, with automated gameplay and save checks to help catch regressions. |
+## 📁 Repository Structure
 
-Looking Glass retains the original artwork, models, music and voices from your
-game files. Its focus is rebuilding the engine and gameplay with these practical
-conveniences; visual and behavioral fidelity are still being refined.
-
-## Recreated gameplay
-
-- **Campaign progression:** story-ordered levels and return visits, quest items,
-  puzzles, moving machinery and persistent world state.
-- **Combat:** the weapon and power-up systems, enemy encounters and boss fights.
-- **Traversal:** rope climbing and swinging, ledge grabs and pull-ups, swimming,
-  currents and breath management.
-- **Story and atmosphere:** scripted cameras and character performances,
-  conversations, Cheshire hints, music, voices and positional sound effects.
-
-These systems are implemented with remaining gaps documented below. They are
-recreations of the original game's features, alongside the conveniences above.
-
-## Current status
-
-**The full campaign is playable; this re-remaster is still an experimental preview.**
-
-All 39 campaign visits have been completed in automated native playthroughs:
-three Easy and two Normal runs, including one uninterrupted fresh campaign.
-The other four used earned checkpoints while fixes were developed. The ending
-film and credits were also checked in the viewer. These results do not establish
-complete visual, audio or original-game fidelity. See the
-[campaign audit](docs/CAMPAIGN_RUN_AUDIT.md) and
-[known issues](docs/KNOWN_ISSUES.md) for exact coverage and remaining work.
-
-The current development build supports Windows x64, the 2011 vanilla data set
-in English, German, French, Spanish and Dutch, persistent campaign saves,
-keyboard/mouse and configurable controller input. Dutch uses English spoken
-dialogue. Other data editions and platforms have not been certified.
-
-Expect remaining differences in cutscene staging, effects, materials and enemy
-behavior, plus a reported waterside rope-grab issue. Broader PC and audible
-playthrough validation remain unfinished. Looking Glass uses its own save
-format; saves from the original game cannot be imported.
-
-## Gameplay
-
-Short clips recorded in the Windows preview, at normal speed. These recordings
-are **silent**. Select a preview to watch or download the full video.
-
-| Dry Landing | Pool of Tears | Pale Realm |
-| --- | --- | --- |
-| [![Cards combat against an ant guard](docs/media/gameplay/dry-landing.gif)](docs/media/gameplay/dry-landing.mp4) | [![Exploring the waterfall path](docs/media/gameplay/pool-of-tears.gif)](docs/media/gameplay/pool-of-tears.mp4) | [![Walking through the chess town](docs/media/gameplay/pale-realm.gif)](docs/media/gameplay/pale-realm.mp4) |
-| Cards combat · [Watch video, 11 seconds](docs/media/gameplay/dry-landing.mp4) | Waterfall exploration · [Watch video, 10 seconds](docs/media/gameplay/pool-of-tears.mp4) | Chess town exploration · [Watch video, 14 seconds](docs/media/gameplay/pale-realm.mp4) |
-
-Full videos are 720p. [Recording details](docs/media/gameplay/README.md).
-
-## Install and play
-
-1. **[Download for Windows](https://github.com/looking-glass-project/LookingGlass/releases/download/v0.33.0-preview.4/LookingGlass-Windows-x64-v0.33.0-preview.4.zip)**. This downloads the one ZIP you need.
-2. Right-click the ZIP, choose **Extract All**, and open the extracted folder.
-   Keep it somewhere writable, such as `Documents\LookingGlass`.
-3. Double-click **Launch.cmd**. Setup defaults to game files already on your
-   computer. If none are found, use **Choose archive** or **Choose folder**.
-   The optional Internet Archive download must be selected explicitly, then
-   confirmed only if you are entitled to download and use those files.
-4. Choose your **Language**, then select **Set up**. Setup checks and unpacks
-   the files, then opens the game.
-   Next time, just open **Launch.cmd** or your optional desktop shortcut.
-
-To change the language later, open **Setup.cmd**, select another language and
-click **Apply language**.
-
-Choose **New Game** to play the full campaign in story order, or use the chapter
-chooser to jump into a particular visit.
-
-No commands, Rust, separate 7-Zip installation or administrator access are needed
-for the Windows package. Allow **3 GB of free space**; the optional game-data
-download is about **933 MB**. Setup needs internet access only if you choose Download.
-
-**Where do the game files come from?** The supported file is
-**Alice1_2011_vanilla.7z** from
-[American McGee's Alice (2011) on Internet Archive](https://archive.org/details/alice_202106).
-Use **Choose archive** / **Choose folder** for files you already have. To download
-instead, select **Download from Internet Archive**, select **Set up**, and confirm
-your entitlement. The confirmation defaults to **No**; setup never switches to a
-download because local files are missing. Use game files you are entitled to use. Original game
-data is not included in the Looking Glass release.
-
-That download is hosted by a third party, not this project. Its availability
-and setup's integrity checks do not establish permission to download or use it.
-See the [game-data and media notice](LEGAL.md#what-the-project-distributes).
-
-See [installation and troubleshooting](docs/INSTALL.md), including updates and
-building from source. [Release notes and checksums](https://github.com/looking-glass-project/LookingGlass/releases/tag/v0.33.0-preview.4)
-describe the exact package and its verification limits.
-
-Use the in-game settings to view or change controls. **Esc** opens the menu,
-**F5/F9** quick-save/load, and **Tab** opens the chapter chooser. Choosing a
-chapter starts a new visit; use normal exits to carry campaign progress.
-
-## Build and contribute
-
-```powershell
-cargo test --locked
-cargo build --release --locked
-.\Setup.cmd
-.\Launch.cmd
+```text
+LookingMetal/
+├── build.sh                  # All-in-one build and packaging script
+├── Cargo.toml                # Rust package definition
+├── base/                     # Directory for Alice game data (*.pk3)
+├── ios/
+│   ├── Info.plist            # iOS Application manifest
+│   └── AppIcon.png           # High-resolution application master icon
+├── dist/                     # Generated release packages (.ipa / .app)
+├── third_party/
+│   └── miniquad/             # Patched Miniquad engine (multitouch & 120 FPS fixes)
+├── src/
+│   ├── launcher.rs           # Pre-game settings launcher
+│   ├── touch_gamepad.rs      # Virtual controller subsystem
+│   ├── ios_controller.rs     # Apple GameController.framework bridge
+│   ├── viewer.rs             # Rendering loop and input dispatcher
+│   ├── movie.rs              # Cinematic video playback
+│   └── main.rs               # LookingMetal entry point
+└── PROJECT_STATUS.md         # Technical architecture documentation
 ```
 
-The minimum Rust version is declared in [Cargo.toml](Cargo.toml). The dependency
-versions are locked. Building does not fetch original game data.
+---
 
-[Contribution guidance](CONTRIBUTING.md) explains the source boundary, testing
-and bug-report requirements. Development shortcuts are under
-[tools/launchers](tools/launchers/README.md); ordinary play uses root `Launch.cmd`.
+## 🛠 `build.sh` Command Reference
 
-## Documentation
+| Command | Description |
+|---|---|
+| `./build.sh ios` | Build and package standalone `.ipa` for iOS |
+| `./build.sh mac` | Build native `.app` bundle for macOS (Apple Silicon) |
+| `./build.sh run` | Run game natively on macOS (Keyboard + Mouse) |
+| `./build.sh run-touch` | Run on macOS simulating mobile touch gamepad & launcher |
+| `./build.sh setup` | Verify toolchains and download missing targets |
+| `./build.sh clean` | Clean build artifacts and temporary cache |
 
-- [Installation](docs/INSTALL.md) and [controls](docs/CONTROLS.md)
-- [Campaign route audit](docs/CAMPAIGN_RUN_AUDIT.md) and [known issues](docs/KNOWN_ISSUES.md)
-- [Validation](docs/VALIDATION.md) and [save behavior](docs/SAVES.md)
-- [Release preparation](docs/RELEASE_PLAN.md)
-- [Code signing policy and privacy](docs/CODE_SIGNING.md) — application awaiting review; current preview unsigned
-- [Earlier development notes](docs/DEVELOPMENT_HISTORY.md)
+---
 
-## License and independence
+## ❤️ Credits
 
-Newly authored source and documentation use the [MIT license](LICENSE-MIT).
-Original game assets, gameplay footage and third-party components are excluded
-from that license.
-**This project is not endorsed by or affiliated with EA or its licensors.**
-EA and the respective rights holders retain all rights in the original game,
-its assets and trademarks. The project hosts no playable original game-data
-packages; published gameplay footage is described separately in the
-[rights, ownership and distribution notice](LEGAL.md).
+- The [LookingGlass](https://github.com/LookingGlass) project contributors for the modern Rust port of the Alice engine.
+- The Nintendo Switch homebrew port creators for assets and inspiration.
+- American McGee and Rogue Entertainment for the gothic masterpiece.

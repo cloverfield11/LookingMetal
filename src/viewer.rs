@@ -532,7 +532,11 @@ fn starting_stats(options: &Options, map: &str, entry: Option<&str>) -> Stats {
 
 mod start;
 
-pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
+pub fn run(assets: Assets, options: Options) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>>>> {
+    Box::pin(run_impl(assets, options))
+}
+
+async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
     // Release cursor/audio before Miniquad destroys its native request queue.
     prevent_quit();
     if let Some(launch) = &options.coop {
@@ -545,6 +549,35 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
     }
     let mut escape_menu = crate::menu::Menu::load(&mut assets).context("Loading original menus")?;
     let mut preferences = crate::preferences::Preferences::load();
+    #[allow(unused_mut)]
+    let mut launcher_settings = crate::launcher::LauncherSettings::load();
+
+    let run_touch_ui = {
+        #[cfg(target_os = "ios")]
+        { true }
+        #[cfg(not(target_os = "ios"))]
+        { options.touch_mode }
+    };
+
+    if run_touch_ui {
+        macroquad::input::simulate_mouse_with_touch(false);
+        if options.frames.is_none() && !options.direct_map {
+            let res = crate::launcher::run_launcher(&mut assets, &ui, &mut preferences, &mut launcher_settings).await;
+            if res == crate::launcher::LauncherResult::Quit {
+                return Ok(());
+            }
+        }
+        #[cfg(target_os = "ios")]
+        {
+            let fps = match launcher_settings.fps_choice {
+                1 => 120,
+                2 => 30,
+                _ => 60,
+            };
+            macroquad::miniquad::native::ios::set_preferred_frames_per_second(fps);
+        }
+    }
+
     let mut input = crate::input::Input::default();
     let mut weapon_buttons = crate::weapon_rules::Buttons::default();
     weapon_buttons.block();
@@ -725,6 +758,16 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
     let mut new_game_requested = None;
     let mut chapter_requested = None;
     let mut mouse_look = MouseLook::default();
+    let mut touch_pad = crate::touch_gamepad::TouchGamepad::default();
+    touch_pad.scale_mult = match launcher_settings.touch_scale {
+        1 => 1.0,
+        2 => 1.5,
+        _ => 1.25,
+    };
+    if launcher_settings.gamepad_style == 1 {
+        touch_pad.enabled = false;
+    }
+    let mut ios_pad = crate::ios_controller::IosGamepad::default();
     let mut was_focused = true;
     let mut campaign = Campaign::default();
     let mut played = resume.is_none();
@@ -884,6 +927,13 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
     loop {
         crate::ui_probe::screen(if paused { "solo-paused" } else { "solo-play" }, &[], "");
         let mut frame_profile = crate::frame_profile::span("frame_cpu");
+        ios_pad.update();
+        if ios_pad.state.connected || launcher_settings.gamepad_style == 1 {
+            touch_pad.enabled = false;
+        } else {
+            touch_pad.enabled = true;
+        }
+        touch_pad.update();
         input.update(&preferences, window_focused());
         let overlay_before = menu || inventory_menu || console.open || paused;
         let context_before = (menu, inventory_menu, console.open, paused);
@@ -895,7 +945,7 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
             break;
         }
         if window_focused() && !console.open {
-            if (is_key_pressed(KeyCode::Escape) || input.pad_pressed("Start"))
+            if (is_key_pressed(KeyCode::Escape) || input.pad_pressed("Start") || touch_pad.is_pressed(KeyCode::Escape) || ios_pad.state.start_pressed)
                 && !menu
                 && !inventory_menu
             {
@@ -1329,9 +1379,32 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
             next_frame().await;
             continue;
         }
-        let pressed = |key| focused && !console_input && input.key(&preferences, key, true);
-        let held = |key| focused && !console_input && input.key(&preferences, key, false);
-        if input.ui(KeyCode::Escape) && !console_input {
+        let pressed = |key| {
+            focused && !console_input && (
+                input.key(&preferences, key, true)
+                || touch_pad.is_pressed(key)
+                || match key {
+                    KeyCode::Space => ios_pad.state.a_pressed,
+                    KeyCode::E => ios_pad.state.y_pressed,
+                    KeyCode::Escape => ios_pad.state.start_pressed,
+                    _ => false,
+                }
+            )
+        };
+        let held = |key| {
+            focused && !console_input && (
+                input.key(&preferences, key, false)
+                || touch_pad.is_held(key)
+                || match key {
+                    KeyCode::Space => ios_pad.state.a_held,
+                    KeyCode::E => ios_pad.state.y_held,
+                    KeyCode::Escape => ios_pad.state.start_held,
+                    KeyCode::LeftShift => ios_pad.state.lb_held,
+                    _ => false,
+                }
+            )
+        };
+        if (input.ui(KeyCode::Escape) || touch_pad.is_pressed(KeyCode::Escape) || ios_pad.state.start_pressed) && !console_input {
             if inventory_menu {
                 inventory_menu = false;
             } else if menu {
@@ -1412,17 +1485,35 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
         if !scripted_view {
             player.script_facing = yaw;
         }
+        let look_active = focused
+            && !paused
+            && !menu
+            && !inventory_menu
+            && !console_input
+            && !scripted_view
+            && stats.alive();
+        #[cfg(not(target_os = "ios"))]
         mouse_look.update(
-            focused
-                && !paused
-                && !menu
-                && !inventory_menu
-                && !console_input
-                && !scripted_view
-                && stats.alive(),
+            look_active,
             &mut yaw,
             &mut pitch,
         );
+        #[cfg(target_os = "ios")]
+        if !touch_pad.enabled && !ios_pad.state.connected {
+            mouse_look.update(
+                look_active,
+                &mut yaw,
+                &mut pitch,
+            );
+        }
+        if look_active {
+            touch_pad.apply_look(&mut yaw, &mut pitch);
+            if ios_pad.state.connected && ios_pad.state.look_axis != Vec2::ZERO {
+                let sens = 0.04 * preferences.sensitivity;
+                yaw = (yaw - ios_pad.state.look_axis.x * sens).rem_euclid(std::f32::consts::TAU);
+                pitch = (pitch - ios_pad.state.look_axis.y * sens).clamp(-1.5, 1.5);
+            }
+        }
         hud.update(dt);
         if focused && !console_input && stats.alive() && !menu && (inventory_menu || !paused) {
             let keys = [
@@ -1454,6 +1545,8 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
             let previous = input.action(&preferences, "Wheel Up", true)
                 || (inventory_menu && (input.ui(KeyCode::Up) || input.ui(KeyCode::Left)));
             let next = input.action(&preferences, "Wheel Down", true)
+                || touch_pad.is_action_pressed("Wheel Down")
+                || ios_pad.state.rb_pressed
                 || (inventory_menu && (input.ui(KeyCode::Down) || input.ui(KeyCode::Right)));
             if previous || next {
                 stats.cycle(if next { 1 } else { -1 });
@@ -1467,10 +1560,15 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
                 && !flying
                 && player.script_motion == 0
                 && !interactions.level_blocks_weapons();
-            if weapon_input_enabled
-                && (input.action(&preferences, "Mouse 1", true)
-                    || input.action(&preferences, "Mouse 2", true))
-            {
+            let attack_1_pressed = input.action(&preferences, "Mouse 1", true)
+                || touch_pad.is_action_pressed("Mouse 1")
+                || ios_pad.state.x_pressed
+                || ios_pad.state.rt_pressed;
+            let attack_2_pressed = input.action(&preferences, "Mouse 2", true)
+                || touch_pad.is_action_pressed("Mouse 2")
+                || ios_pad.state.b_pressed
+                || ios_pad.state.lt_pressed;
+            if weapon_input_enabled && (attack_1_pressed || attack_2_pressed) {
                 if !crate::weapons::supported(stats.selected()) {
                     hud.announce("This toy's attacks are not yet available");
                 } else if stats.selected() == 6 && !alice.ready_to_attack(6) {
@@ -1480,11 +1578,16 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
                 }
             }
         }
+        let attack_1_held = input.action(&preferences, "Mouse 1", false)
+            || touch_pad.is_action_held("Mouse 1")
+            || ios_pad.state.x_held
+            || ios_pad.state.rt_held;
+        let attack_2_held = input.action(&preferences, "Mouse 2", false)
+            || touch_pad.is_action_held("Mouse 2")
+            || ios_pad.state.b_held
+            || ios_pad.state.lt_held;
         weapon_click = weapon_buttons.sample(
-            [
-                input.action(&preferences, "Mouse 1", false),
-                input.action(&preferences, "Mouse 2", false),
-            ],
+            [attack_1_held, attack_2_held],
             weapon_input_enabled,
         );
         if inventory_menu && input.ui(KeyCode::Enter) {
@@ -1494,7 +1597,7 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
             && !menu
             && !inventory_menu
             && !console_input
-            && ((!stats.alive() && (pressed(KeyCode::Enter) || input.pad_pressed("A")))
+            && ((!stats.alive() && (pressed(KeyCode::Enter) || input.pad_pressed("A") || touch_pad.is_pressed(KeyCode::Space) || touch_pad.is_action_pressed("Mouse 1")))
                 || (!paused && pressed(KeyCode::R)));
         let restart =
             focused && !menu && !inventory_menu && !console_input && pressed(KeyCode::Home);
@@ -1533,7 +1636,25 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
                         .and_then(|v| v.cinema.scene_id())
                 }),
         );
-        let skip_requested = skip_scene.update(
+        let in_cinematic = in_transport || interactions.scripted() || skip_id.is_some();
+        let s_ui = (screen_height() / 390.0).clamp(1.0, 3.5);
+        let cutscene_skip_btn = Rect::new(screen_width() - 150.0 * s_ui, 20.0 * s_ui, 130.0 * s_ui, 50.0 * s_ui);
+        let mut tap_skipped_cutscene = false;
+        if in_cinematic {
+            for t in macroquad::input::touches() {
+                if cutscene_skip_btn.contains(t.position) && t.phase == TouchPhase::Started {
+                    tap_skipped_cutscene = true;
+                    break;
+                }
+            }
+            if is_mouse_button_pressed(MouseButton::Left) {
+                let mpos = Vec2::from(mouse_position());
+                if cutscene_skip_btn.contains(mpos) {
+                    tap_skipped_cutscene = true;
+                }
+            }
+        }
+        let skip_requested = tap_skipped_cutscene || skip_scene.update(
             skip_id,
             !paused
                 && !menu
@@ -1542,7 +1663,7 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
                 && focused
                 && !flying
                 && stats.alive(),
-            held(KeyCode::Enter) || input.pad_held("A"),
+            held(KeyCode::Enter) || input.pad_held("A") || ios_pad.state.a_held || ios_pad.state.start_held,
             dt,
         );
         if skip_requested {
@@ -1810,6 +1931,12 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
             );
             let right = vec3(yaw.sin(), -yaw.cos(), 0.);
             let mut movement = forward * input.movement().y + right * input.movement().x;
+            let touch_move = touch_pad.movement();
+            movement += forward * touch_move.y + right * touch_move.x;
+            if ios_pad.state.connected {
+                let pad_m = ios_pad.state.move_axis;
+                movement += forward * pad_m.y + right * pad_m.x;
+            }
             if held(KeyCode::W) {
                 movement += forward;
             }
@@ -1922,6 +2049,12 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
                 let flat = vec2(yaw.cos(), yaw.sin());
                 let right = vec2(yaw.sin(), -yaw.cos());
                 let mut wish = flat * input.movement().y + right * input.movement().x;
+                let touch_move = touch_pad.movement();
+                wish += flat * touch_move.y + right * touch_move.x;
+                if ios_pad.state.connected {
+                    let pad_m = ios_pad.state.move_axis;
+                    wish += flat * pad_m.y + right * pad_m.x;
+                }
                 if held(KeyCode::W) {
                     wish += flat;
                 }
@@ -3317,6 +3450,13 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
                         input.label(&preferences, "Enter")
                     },
                 );
+                set_default_camera();
+                gl_use_default_material();
+                let s_ui = (screen_height() / 390.0).clamp(1.0, 3.5);
+                let skip_btn = Rect::new(screen_width() - 150.0 * s_ui, 20.0 * s_ui, 130.0 * s_ui, 50.0 * s_ui);
+                draw_rectangle(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, Color::new(0.0, 0.0, 0.0, 0.75));
+                draw_rectangle_lines(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, 2.5 * s_ui, Color::new(1.0, 1.0, 1.0, 0.90));
+                ui.center("SKIP >>", skip_btn, 16.0 * s_ui, WHITE);
             }
         }
         if audio.settings.muted && help && !inventory_menu && !console_input {
@@ -3388,6 +3528,9 @@ pub async fn run(mut assets: Assets, mut options: Options) -> Result<()> {
         }
         if context_before != (menu, inventory_menu, console.open, paused) {
             input.suppress();
+        }
+        if escape_menu.page.is_none() && !menu && !inventory_menu && run_touch_ui {
+            touch_pad.draw();
         }
         next_frame().await;
     }

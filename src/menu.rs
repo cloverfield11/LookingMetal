@@ -1633,7 +1633,14 @@ impl Menu {
             self.selected = self.selected.min(buttons.len().saturating_sub(1));
             audio.update(0., listener, yaw, true, true);
             let canvas = Canvas::new(screen_width(), screen_height());
-            let mouse = Vec2::from(mouse_position());
+            // iOS deliberately disables touch-to-mouse emulation so gameplay
+            // can track multiple fingers.  Menus still need first-class tap
+            // activation, otherwise the front-end is impossible to enter on
+            // an iPhone before the in-game overlay is available.
+            let touch_tap = macroquad::input::touches().iter()
+                .find(|touch| touch.phase == TouchPhase::Started)
+                .map(|touch| touch.position);
+            let mouse = touch_tap.unwrap_or_else(|| Vec2::from(mouse_position()));
             let hit = buttons
                 .iter()
                 .position(|b| b.rect.contains(canvas.pointer(mouse)));
@@ -1709,7 +1716,7 @@ impl Menu {
                         Some(Click::Page(Page::Controls))
                     } else if page == Page::Settings && is_key_pressed(KeyCode::Key4) {
                         Some(Click::Page(Page::Game))
-                    } else if is_mouse_button_pressed(MouseButton::Left) {
+                    } else if touch_tap.is_some() || is_mouse_button_pressed(MouseButton::Left) {
                         hit.map(|i| buttons[i].click)
                     } else if input.ui(KeyCode::Enter) {
                         self.mouse_navigation = false;

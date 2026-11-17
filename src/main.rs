@@ -1,3 +1,7 @@
+#[cfg(target_os = "ios")]
+#[macro_use]
+extern crate objc;
+
 mod acting;
 mod ambient_animation;
 mod animation_events;
@@ -108,6 +112,9 @@ mod story;
 mod tan;
 mod targeting;
 mod texture;
+pub mod ios_controller;
+pub mod launcher;
+pub mod touch_gamepad;
 mod traversal;
 mod ui;
 mod ui_probe;
@@ -151,6 +158,7 @@ pub struct Options {
     pub start_at: Option<macroquad::prelude::Vec3>,
     pub story_preview: Option<String>,
     pub shelf_preview: bool,
+    pub touch_mode: bool,
 }
 
 // NVIDIA's documented Optimus preference for applications without a driver
@@ -172,17 +180,65 @@ fn run() -> Result<()> {
     if let Some(result) = coop::check::cli(&std::env::args().skip(1).collect::<Vec<_>>()) {
         return result;
     }
+    let default_save_dir = {
+        #[cfg(target_os = "ios")]
+        {
+            if let Ok(home) = std::env::var("HOME") {
+                PathBuf::from(home).join("Documents/saves")
+            } else {
+                PathBuf::from("saves")
+            }
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            PathBuf::from("private/saves")
+        }
+    };
+    let default_data_dir = {
+        let mut candidates = vec![
+            std::env::var("LOOKING_GLASS_DATA").ok().map(PathBuf::from),
+            std::fs::read_to_string("private/data-path.txt")
+                .ok()
+                .filter(|p| !p.trim().is_empty())
+                .map(|p| PathBuf::from(p.trim())),
+            Some(PathBuf::from("base")),
+            std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.join("base"))),
+            std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())),
+        ];
+        if let Ok(home) = std::env::var("HOME") {
+            let h = PathBuf::from(home);
+            candidates.push(Some(h.join("Documents/Applications/org.lookingglass.alice.app/base")));
+            candidates.push(Some(h.join("Documents/Applications/Alice.app/base")));
+            candidates.push(Some(h.join("Documents/base")));
+            if let Ok(apps) = std::fs::read_dir(h.join("Documents/Applications")) {
+                for app in apps.flatten() {
+                    candidates.push(Some(app.path().join("base")));
+                }
+            }
+        }
+        candidates.push(Some(PathBuf::from("alice_202106/Alice1/bin/base")));
+        candidates
+            .into_iter()
+            .flatten()
+            .find(|p| {
+                p.exists()
+                    && std::fs::read_dir(p).ok().map_or(false, |mut it| {
+                        it.any(|e| {
+                            e.ok().map_or(false, |e| {
+                                e.path().extension().is_some_and(|s| s.eq_ignore_ascii_case("pk3"))
+                            })
+                        })
+                    })
+            })
+            .unwrap_or_else(|| PathBuf::from("base"))
+    };
     let mut o = Options {
         coop: None,
         difficulty: Default::default(),
-        save_dir: PathBuf::from("private/saves"),
+        save_dir: default_save_dir,
         load: None,
         new_game: false,
-        data: std::fs::read_to_string("private/data-path.txt")
-            .ok()
-            .filter(|path| !path.trim().is_empty())
-            .map(|path| PathBuf::from(path.trim()))
-            .unwrap_or_else(|| PathBuf::from("alice_202106/Alice1/bin/base")),
+        data: default_data_dir,
         map: "skool1".into(),
         direct_map: false,
         entry: None,
@@ -199,6 +255,7 @@ fn run() -> Result<()> {
         start_at: None,
         story_preview: None,
         shelf_preview: false,
+        touch_mode: false,
     };
     let mut args = std::env::args().skip(1);
     let mut mode = "view";
@@ -373,6 +430,7 @@ fn run() -> Result<()> {
             "--validate-all" => mode = "validate",
             "--physics-check" => mode = "physics",
             "--fly" => o.fly = true,
+            "--touch" | "--mobile" => o.touch_mode = true,
             "--no-audio" => o.no_audio = true,
             "--audio-check" => mode = "audio",
             "--character-check" => mode = "character",
@@ -1528,11 +1586,12 @@ fn run() -> Result<()> {
         println!("Map: {}\nFormat: FAKK 42\nArchives: {}\nVertices: {}\nSurfaces: {} (world: {})\nEntities: {}\nLightmaps: {}\nSpawn: {:?}",o.map,assets.pack_count(),map.vertices.len(),map.surfaces.len(),map.world_surfaces.len(),map.entities.len(),map.lightmaps.len()/49152,map.spawn());
         return Ok(());
     }
-    macroquad::Window::from_config(viewer::config(), async move {
+    let future: std::pin::Pin<Box<dyn std::future::Future<Output = ()>>> = Box::pin(async move {
         if let Err(e) = viewer::run(assets, o).await {
             eprintln!("Viewer failed: {e:#}");
             std::process::exit(1);
         }
     });
+    macroquad::Window::from_config(viewer::config(), future);
     Ok(())
 }

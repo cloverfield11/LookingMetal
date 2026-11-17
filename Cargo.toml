@@ -1,10 +1,14 @@
 [package]
-name = "looking-glass"
-version = "0.33.0-preview.4"
+name = "looking-metal"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.86"
 publish = false
-description = "Local Rust compatibility research for user-supplied Alice game data"
+description = "American McGee's Alice native Apple Metal port for iOS & macOS ARM"
+
+[[bin]]
+name = "looking-metal"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"
@@ -28,6 +32,12 @@ tungstenite = { version = "=0.30.0", features = ["native-tls"] }
 getrandom = "=0.3.4"
 # Already present through ZIP; use the same pinned codec for bounded co-op state.
 flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc = "0.2.7"
+
+[patch.crates-io]
+miniquad = { path = "third_party/miniquad" }
 
 [build-dependencies]
 sha2 = "=0.10.9"

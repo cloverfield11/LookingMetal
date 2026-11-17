@@ -301,13 +301,35 @@ pub async fn play(
                 s.pause();
             }
         }
+        let s_ui = (screen_height() / 390.0).clamp(1.0, 3.5);
+        let skip_btn = Rect::new(screen_width() - 150.0 * s_ui, 20.0 * s_ui, 130.0 * s_ui, 50.0 * s_ui);
+        let touches = macroquad::input::touches();
+        let mut tap_skipped = false;
+        for t in &touches {
+            if skip_btn.contains(t.position) && t.phase == TouchPhase::Started {
+                tap_skipped = true;
+                break;
+            }
+        }
+        if is_mouse_button_pressed(MouseButton::Left) {
+            let mpos = Vec2::from(mouse_position());
+            if skip_btn.contains(mpos) {
+                tap_skipped = true;
+            }
+        }
+
         let dt = get_frame_time().clamp(0., 0.1);
-        if skip.update(
-            Some("story-movie"),
-            active,
-            input.key(preferences, KeyCode::Enter, false) || input.pad_held("A"),
-            dt,
-        ) {
+        if tap_skipped
+            || skip.update(
+                Some("story-movie"),
+                active,
+                input.key(preferences, KeyCode::Enter, false) || input.pad_held("A"),
+                dt,
+            )
+        {
+            if let Some(s) = &soundtrack {
+                s.stop();
+            }
             break;
         }
         if active {
@@ -344,6 +366,11 @@ pub async fn play(
             },
         );
         skip.draw(ui, if input.using_pad { "A" } else { "Enter" });
+        // Draw touch SKIP button
+        draw_rectangle(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, Color::new(0.0, 0.0, 0.0, 0.65));
+        draw_rectangle_lines(skip_btn.x, skip_btn.y, skip_btn.w, skip_btn.h, 2.0, Color::new(1.0, 1.0, 1.0, 0.85));
+        ui.center("SKIP >>", skip_btn, 18., WHITE);
+
         if !active {
             ui.paused(if input.using_pad {
                 "Start to resume film"

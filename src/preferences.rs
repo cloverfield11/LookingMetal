@@ -7,7 +7,20 @@ use std::path::PathBuf;
 pub fn path(name: &str) -> PathBuf {
     std::env::var_os("LOOKING_GLASS_SETTINGS_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("private"))
+        .unwrap_or_else(|| {
+            #[cfg(target_os = "ios")]
+            {
+                if let Ok(home) = std::env::var("HOME") {
+                    PathBuf::from(home).join("Documents")
+                } else {
+                    PathBuf::from("private")
+                }
+            }
+            #[cfg(not(target_os = "ios"))]
+            {
+                PathBuf::from("private")
+            }
+        })
         .join(name)
 }
 
