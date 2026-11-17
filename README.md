@@ -7,7 +7,7 @@
 [![Engine](https://img.shields.io/badge/Language-Rust-red.svg)](https://www.rust-lang.org)
 [![Framerate](https://img.shields.io/badge/Display-120%20FPS%20ProMotion-brightgreen.svg)]()
 
-**LookingMetal** is a specialized fork of [LookingGlass](https://github.com/LookingGlass), engineered to bring **American McGee's Alice** natively to modern Apple hardware (iPhone, iPad, and Apple Silicon Macs) using **Native Apple Metal & MetalKit**.
+**LookingMetal** is a specialized fork of [LookingGlass](https://github.com/looking-glass-project/LookingGlass), engineered to bring **American McGee's Alice** natively to modern Apple hardware (iPhone, iPad, and Apple Silicon Macs) using **Native Apple Metal & MetalKit**.
 
 No x86 emulation, UTM virtual machines, or translation layers — this is a pure native `aarch64` port running at a smooth **120 FPS on ProMotion** displays.
 
@@ -17,17 +17,16 @@ No x86 emulation, UTM virtual machines, or translation layers — this is a pure
 
 - ⚡️ **Native Apple Metal Graphics:** Direct hardware acceleration via Apple MetalKit on A-series and M-series chips.
 - 📱 **Smooth 120 FPS (ProMotion):** Fully supports high-refresh displays (iPhone 13 Pro and newer, iPad Pro, MacBook Pro).
-- 🎮 **Polished Mobile Controls (Brawl Stars / GTA Mobile Style):**
+- 🎮 **Polished Mobile Controls (Ergonomic Platformer HUD):**
   - **Left Analog Stick (MOVE):** 360° locomotion with a dynamic floating center under your thumb. Natural analog speed control: gentle tilt walks calmly at classic pace, firm tilt sprints forward.
-  - **Right Analog Stick (LOOK):** 360° camera rotation with quadratic response curve. Exclusively handles camera look (no accidental camera spins from touching the screen).
-  - **Action Diamond (ABXY):**
-    - `A` (Emerald): Jump & Climb
-    - `X` (Ruby): Primary Attack (Vorpal Blade slash)
-    - `B` (Sapphire): Alternate Attack (Vorpal Blade throw)
-    - `Y` (Amber): Action / Interact (Key `E`: levers, doors, dialogue)
-  - **`NEXT` Toy Button:** Instant one-tap weapon cycling placed right above the attack buttons.
-  - **`+` Button:** Quick pause / menu button in the top corner.
-  - **Zero Accidental Actions:** Touching empty screen glass will never trigger false attacks or camera spins. All interactions are strictly tied to dedicated virtual buttons.
+  - **Right-Screen Camera Swipes:** The entire right side of the screen is open for natural, fluid camera rotation (no rigid right stick cluttering the screen).
+  - **Monochromatic Frosted Glass Buttons:** Highly translucent, elegant minimalist glass controls with bespoke vector icons:
+    - 🥾 **JUMP:** Large button positioned low in the bottom-right corner directly under the resting thumb for effortless platforming.
+    - 🗡️ **SLASH:** Vorpal Blade primary attack placed right beside Jump for seamless thumb rolling.
+    - 🎯 **THROW:** Flying dagger projectile attack.
+    - ✋ **USE:** Action / Interact (Key `E`: levers, doors, dialogue).
+    - 🔄 **SWAP:** Circular weapon cycling placed at the top arc.
+  - **Zero Accidental Actions:** Clean touch discrimination prevents false attacks or jumps while panning the camera.
 - 🖱️ **Full Touchpad Menu Navigation:**
   - Swipe anywhere on the screen like a laptop trackpad to glide the Alice cursor across menus with natural momentum.
   - Tap anywhere to click hovered items, or tap directly on menu buttons.
@@ -133,6 +132,6 @@ LookingMetal/
 
 ## ❤️ Credits
 
-- The [LookingGlass](https://github.com/LookingGlass) project contributors for the modern Rust port of the Alice engine.
+- The [LookingGlass](https://github.com/looking-glass-project/LookingGlass) project contributors for the modern Rust port of the Alice engine.
 - The Nintendo Switch homebrew port creators for assets and inspiration.
 - American McGee and Rogue Entertainment for the gothic masterpiece.
