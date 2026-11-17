@@ -1,5 +1,7 @@
-//! Clean, modern mobile action-game touch controls (Brawl Stars / GTA mobile style).
+//! Clean, modern mobile action-game touch controls.
+//! Features right-screen swipe camera look and large ergonomic action buttons (Platformer layout).
 use macroquad::prelude::*;
+use std::cell::Cell;
 use std::collections::HashSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -13,17 +15,16 @@ pub enum TouchButton {
 }
 
 pub struct TouchGamepad {
-    // Left Joystick (Locomotion)
+    // Left Joystick (Locomotion: Walk / Sprint)
     lstick_touch_id: Option<u64>,
     lstick_center: Vec2,
     lstick_current: Vec2,
     lstick_vector: Vec2,
 
-    // Right Joystick (Camera Look - ONLY source of camera rotation)
-    rstick_touch_id: Option<u64>,
-    rstick_center: Vec2,
-    rstick_current: Vec2,
-    rstick_vector: Vec2,
+    // Camera Look Swipe (Right-screen touch swipe)
+    look_touch_id: Option<u64>,
+    look_prev_pos: Vec2,
+    look_delta: Cell<Vec2>,
 
     // Buttons state
     held_buttons: HashSet<TouchButton>,
@@ -43,10 +44,9 @@ impl Default for TouchGamepad {
             lstick_current: Vec2::ZERO,
             lstick_vector: Vec2::ZERO,
 
-            rstick_touch_id: None,
-            rstick_center: Vec2::ZERO,
-            rstick_current: Vec2::ZERO,
-            rstick_vector: Vec2::ZERO,
+            look_touch_id: None,
+            look_prev_pos: Vec2::ZERO,
+            look_delta: Cell::new(Vec2::ZERO),
 
             held_buttons: HashSet::new(),
             pressed_buttons: HashSet::new(),
@@ -73,8 +73,8 @@ impl TouchGamepad {
             self.button_touches.clear();
             self.lstick_touch_id = None;
             self.lstick_vector = Vec2::ZERO;
-            self.rstick_touch_id = None;
-            self.rstick_vector = Vec2::ZERO;
+            self.look_touch_id = None;
+            self.look_delta.set(Vec2::ZERO);
             return;
         }
 
@@ -87,8 +87,8 @@ impl TouchGamepad {
         if touches.is_empty() {
             self.lstick_touch_id = None;
             self.lstick_vector = Vec2::ZERO;
-            self.rstick_touch_id = None;
-            self.rstick_vector = Vec2::ZERO;
+            self.look_touch_id = None;
+            self.look_delta.set(Vec2::ZERO);
             self.held_buttons.clear();
             self.pressed_buttons.clear();
             self.button_touches.clear();
@@ -105,22 +105,22 @@ impl TouchGamepad {
             self.held_buttons.insert(*btn);
         }
 
-        // Release sticks whose touches are gone
+        // Release stick if touch is gone
         if let Some(id) = self.lstick_touch_id {
             if !active_ids.contains(&id) {
                 self.lstick_touch_id = None;
                 self.lstick_vector = Vec2::ZERO;
             }
         }
-        if let Some(id) = self.rstick_touch_id {
+
+        // Release look swipe if touch is gone
+        if let Some(id) = self.look_touch_id {
             if !active_ids.contains(&id) {
-                self.rstick_touch_id = None;
-                self.rstick_vector = Vec2::ZERO;
+                self.look_touch_id = None;
             }
         }
 
         let buttons = self.button_layouts(w, h, s);
-        let default_rcenter = vec2(w - 230.0 * s, h - 85.0 * s);
 
         for t in &touches {
             let pos = t.position;
@@ -149,24 +149,22 @@ impl TouchGamepad {
                 continue;
             }
 
-            // 2. Existing Right Stick touch
-            if self.rstick_touch_id == Some(t.id) {
+            // 2. Existing Camera Look Swipe touch
+            if self.look_touch_id == Some(t.id) {
                 match t.phase {
-                    TouchPhase::Moved | TouchPhase::Stationary => {
-                        self.rstick_current = pos;
-                        let diff = pos - self.rstick_center;
-                        let dist = diff.length();
-                        if dist > 0.0 {
-                            let norm = diff / dist;
-                            let clamped = dist.min(stick_radius);
-                            self.rstick_vector = norm * (clamped / stick_radius);
-                        } else {
-                            self.rstick_vector = Vec2::ZERO;
+                    TouchPhase::Moved => {
+                        let delta = pos - self.look_prev_pos;
+                        // Guard against sudden coordinate jumps (e.g. frame lag)
+                        if delta.length() < 200.0 * s {
+                            self.look_delta.set(self.look_delta.get() + delta);
                         }
+                        self.look_prev_pos = pos;
+                    }
+                    TouchPhase::Stationary => {
+                        self.look_prev_pos = pos;
                     }
                     TouchPhase::Ended | TouchPhase::Cancelled => {
-                        self.rstick_touch_id = None;
-                        self.rstick_vector = Vec2::ZERO;
+                        self.look_touch_id = None;
                     }
                     _ => {}
                 }
@@ -185,10 +183,10 @@ impl TouchGamepad {
                 continue;
             }
 
-            // 4. New touch: Check button hits (generous hit padding)
+            // 4. New touch: Check button hits with comfortable padding
             let mut hit_btn = None;
             for (btn, center, radius) in &buttons {
-                if pos.distance(*center) <= (*radius + 12.0 * s) {
+                if pos.distance(*center) <= (*radius + 10.0 * s) {
                     hit_btn = Some(*btn);
                     break;
                 }
@@ -203,8 +201,8 @@ impl TouchGamepad {
                 continue;
             }
 
-            // 5. New touch on Left half: Left Joystick (Floating center under thumb)
-            if pos.x < w * 0.40 && pos.y > 60.0 * s {
+            // 5. New touch on Left half: Left Joystick (Locomotion)
+            if pos.x < w * 0.42 && pos.y > 60.0 * s {
                 if (t.phase == TouchPhase::Started || t.phase == TouchPhase::Moved) && self.lstick_touch_id.is_none() {
                     self.lstick_touch_id = Some(t.id);
                     self.lstick_center = pos;
@@ -214,56 +212,56 @@ impl TouchGamepad {
                 continue;
             }
 
-            // 6. New touch on Right Stick zone ONLY (no free swipe on empty glass!)
-            let r_ref_center = if self.rstick_touch_id.is_some() { self.rstick_center } else { default_rcenter };
-            let r_dist = pos.distance(r_ref_center);
-            if r_dist <= (stick_radius * 1.5) || (pos.x >= w * 0.46 && pos.x <= w * 0.76 && pos.y >= h * 0.45) {
-                if (t.phase == TouchPhase::Started || t.phase == TouchPhase::Moved) && self.rstick_touch_id.is_none() {
-                    self.rstick_touch_id = Some(t.id);
-                    self.rstick_center = if r_dist <= stick_radius { default_rcenter } else { pos };
-                    self.rstick_current = pos;
-                    let diff = pos - self.rstick_center;
-                    let dist = diff.length();
-                    if dist > 0.0 {
-                        let norm = diff / dist;
-                        let clamped = dist.min(stick_radius);
-                        self.rstick_vector = norm * (clamped / stick_radius);
-                    } else {
-                        self.rstick_vector = Vec2::ZERO;
-                    }
+            // 6. New touch on Right half (not hitting any button): Camera Look Swipe!
+            if pos.x >= w * 0.40 {
+                if (t.phase == TouchPhase::Started || t.phase == TouchPhase::Moved) && self.look_touch_id.is_none() {
+                    self.look_touch_id = Some(t.id);
+                    self.look_prev_pos = pos;
                 }
                 continue;
             }
-
-            // All other screen touches on empty glass are completely ignored.
         }
     }
 
+    /// Button layouts adhering to the approved "Platformer (Jump Low)" mapping.
+    /// Buttons are large, ergonomic, and comfortably positioned for natural thumb resting.
     fn button_layouts(&self, w: f32, h: f32, s: f32) -> Vec<(TouchButton, Vec2, f32)> {
         let mut btns = Vec::new();
 
-        // 1. ABXY Diamond (Bottom-Right corner, comfortably away from mana bar)
-        let cx = w - 100.0 * s;
-        let cy = h - 85.0 * s;
-        let spacing = 38.0 * s;
-        let face_r = 21.0 * s;
+        // 1. Jump & Climb (A): Giant button in bottom-right corner directly under the resting thumb
+        // Diameter ~78-80px
+        let jump_r = 39.0 * s;
+        let jump_center = vec2(w - 70.0 * s, h - 66.0 * s);
+        btns.push((TouchButton::A, jump_center, jump_r));
 
-        // A (bottom, emerald green): Jump / Climb
-        btns.push((TouchButton::A, vec2(cx, cy + spacing), face_r));
-        // X (left, alice ruby red): Primary Attack (Vorpal Blade slash)
-        btns.push((TouchButton::X, vec2(cx - spacing, cy), face_r));
-        // B (right, sapphire blue): Alt Attack (Blade throw)
-        btns.push((TouchButton::B, vec2(cx + spacing, cy), face_r));
-        // Y (top, amber gold): Action / Interact (Key E)
-        btns.push((TouchButton::Y, vec2(cx, cy - spacing), face_r));
+        // 2. Primary Attack: Vorpal Blade Slash (X): Giant button directly to the left of Jump
+        // Diameter ~78-80px for easy thumb roll between jump and slash
+        let slash_r = 39.0 * s;
+        let slash_center = vec2(w - 161.0 * s, h - 69.0 * s);
+        btns.push((TouchButton::X, slash_center, slash_r));
 
-        // 2. NEXT Toy / Weapon Switch (Positioned above ABXY cluster)
-        let next_r = 20.0 * s;
-        btns.push((TouchButton::Next, vec2(cx, cy - spacing * 1.85), next_r));
+        // 3. Alt Attack: Throw Blade (B): Above Slash
+        // Diameter ~62px
+        let throw_r = 31.0 * s;
+        let throw_center = vec2(w - 161.0 * s, h - 153.0 * s);
+        btns.push((TouchButton::B, throw_center, throw_r));
 
-        // 3. Pause / Menu Button (+) (Top-right corner, comfortably inside screen)
-        let menu_r = 19.0 * s;
-        btns.push((TouchButton::Start, vec2(w - 42.0 * s, 34.0 * s), menu_r));
+        // 4. Action / Interact: Key E (Y): Above Jump
+        // Diameter ~58px
+        let use_r = 29.0 * s;
+        let use_center = vec2(w - 63.0 * s, h - 149.0 * s);
+        btns.push((TouchButton::Y, use_center, use_r));
+
+        // 5. Swap Weapons / Next Toy (Next): Top-center of cluster
+        // Diameter ~54px
+        let next_r = 27.0 * s;
+        let next_center = vec2(w - 109.0 * s, h - 211.0 * s);
+        btns.push((TouchButton::Next, next_center, next_r));
+
+        // 6. Pause / Menu (+ / Start): Top-right corner
+        let menu_r = 20.0 * s;
+        let menu_center = vec2(w - 42.0 * s, 36.0 * s);
+        btns.push((TouchButton::Start, menu_center, menu_r));
 
         btns
     }
@@ -285,21 +283,17 @@ impl TouchGamepad {
         self.enabled && self.lstick_vector.length() >= 0.72
     }
 
-    /// Apply look rotation to yaw and pitch. ONLY driven by the Right Stick!
+    /// Apply camera look rotation from right-screen touch swipes.
     pub fn apply_look(&self, yaw: &mut f32, pitch: &mut f32) {
         if !self.enabled {
+            self.look_delta.set(Vec2::ZERO);
             return;
         }
-        let dt = get_frame_time().clamp(0.001, 0.05);
-
-        // Right Stick analog rotation with smooth responsive quadratic curve
-        if self.rstick_vector != Vec2::ZERO {
-            let v = self.rstick_vector;
-            let len = v.length();
-            let curved_speed = len * len * 2.8; // Quadratic curve: fine aim + quick turnaround
-            let norm = v / len;
-            *yaw = (*yaw - norm.x * curved_speed * dt).rem_euclid(std::f32::consts::TAU);
-            *pitch = (*pitch - norm.y * curved_speed * dt).clamp(-1.5, 1.5);
+        let delta = self.look_delta.take();
+        if delta.length_squared() > 0.0001 {
+            let sens = 0.0034;
+            *yaw = (*yaw - delta.x * sens).rem_euclid(std::f32::consts::TAU);
+            *pitch = (*pitch - delta.y * sens).clamp(-1.5, 1.5);
         }
     }
 
@@ -380,126 +374,157 @@ impl TouchGamepad {
             (def, def)
         };
 
-        // Dark glass base with double ring
-        draw_circle(lcenter.x, lcenter.y, stick_radius, Color::new(0.02, 0.02, 0.04, 0.35));
-        draw_circle_lines(lcenter.x, lcenter.y, stick_radius, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.35));
-        draw_circle_lines(lcenter.x, lcenter.y, stick_radius * 0.5, 1.0 * s, Color::new(1.0, 1.0, 1.0, 0.15));
+        // Dark translucent glass base with double ring
+        draw_circle(lcenter.x, lcenter.y, stick_radius, Color::new(0.04, 0.05, 0.08, 0.22));
+        draw_circle_lines(lcenter.x, lcenter.y, stick_radius, 1.8 * s, Color::new(0.85, 0.88, 0.94, 0.25));
+        draw_circle_lines(lcenter.x, lcenter.y, stick_radius * 0.5, 1.0 * s, Color::new(1.0, 1.0, 1.0, 0.10));
 
         // Direction guide line
         if self.lstick_vector.length_squared() > 0.01 {
-            draw_line(lcenter.x, lcenter.y, lknob.x, lknob.y, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.60));
+            draw_line(lcenter.x, lcenter.y, lknob.x, lknob.y, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.50));
         }
 
-        // 3D Shaded Knob
-        draw_circle(lknob.x, lknob.y, knob_radius, Color::new(0.85, 0.88, 0.92, 0.70));
-        draw_circle_lines(lknob.x, lknob.y, knob_radius, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.95));
-        draw_circle_lines(lknob.x, lknob.y, knob_radius * 0.45, 1.5 * s, Color::new(0.2, 0.2, 0.2, 0.35));
+        // Frosted Gray Shaded Knob
+        draw_circle(lknob.x, lknob.y, knob_radius, Color::new(0.85, 0.88, 0.92, 0.45));
+        draw_circle_lines(lknob.x, lknob.y, knob_radius, 1.8 * s, Color::new(1.0, 1.0, 1.0, 0.80));
+        draw_circle_lines(lknob.x, lknob.y, knob_radius * 0.45, 1.2 * s, Color::new(0.2, 0.2, 0.2, 0.25));
 
         let l_rect = Rect::new(lknob.x - knob_radius, lknob.y - knob_radius, knob_radius * 2.0, knob_radius * 2.0);
-        ui.center("MOVE", l_rect, 10.0 * s, Color::new(0.12, 0.12, 0.15, 0.95));
+        ui.center("MOVE", l_rect, 10.0 * s, Color::new(0.95, 0.95, 0.98, 0.85));
 
         // ==========================================
-        // 2. Right Stick (Camera Look)
-        // ==========================================
-        let default_rcenter = vec2(w - 230.0 * s, h - 85.0 * s);
-        let (rcenter, rknob) = if self.rstick_touch_id.is_some() {
-            (self.rstick_center, self.rstick_center + self.rstick_vector * stick_radius)
-        } else {
-            (default_rcenter, default_rcenter)
-        };
-
-        // Dark glass base with double ring
-        draw_circle(rcenter.x, rcenter.y, stick_radius, Color::new(0.02, 0.02, 0.04, 0.35));
-        draw_circle_lines(rcenter.x, rcenter.y, stick_radius, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.35));
-        draw_circle_lines(rcenter.x, rcenter.y, stick_radius * 0.5, 1.0 * s, Color::new(1.0, 1.0, 1.0, 0.15));
-
-        // Direction guide line
-        if self.rstick_vector.length_squared() > 0.01 {
-            draw_line(rcenter.x, rcenter.y, rknob.x, rknob.y, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.60));
-        }
-
-        // 3D Shaded Knob
-        draw_circle(rknob.x, rknob.y, knob_radius, Color::new(0.85, 0.88, 0.92, 0.70));
-        draw_circle_lines(rknob.x, rknob.y, knob_radius, 2.0 * s, Color::new(1.0, 1.0, 1.0, 0.95));
-        draw_circle_lines(rknob.x, rknob.y, knob_radius * 0.45, 1.5 * s, Color::new(0.2, 0.2, 0.2, 0.35));
-
-        let r_rect = Rect::new(rknob.x - knob_radius, rknob.y - knob_radius, knob_radius * 2.0, knob_radius * 2.0);
-        ui.center("LOOK", r_rect, 10.0 * s, Color::new(0.12, 0.12, 0.15, 0.95));
-
-        // ==========================================
-        // 3. Action Buttons (Brawl Stars / GTA Mobile Style)
+        // 2. Action Buttons (Platformer Layout: Monochromatic Frosted Glass)
         // ==========================================
         let buttons = self.button_layouts(w, h, s);
         for (btn, center, radius) in buttons {
             let is_held = self.held_buttons.contains(&btn);
 
-            let (accent_color, fill_color, label) = match btn {
-                TouchButton::A => (
-                    Color::new(0.25, 0.95, 0.45, 0.95),
-                    Color::new(0.15, 0.85, 0.35, 0.90),
-                    "A",
-                ),
-                TouchButton::X => (
-                    Color::new(0.95, 0.25, 0.25, 0.95),
-                    Color::new(0.88, 0.15, 0.18, 0.95),
-                    "X",
-                ),
-                TouchButton::B => (
-                    Color::new(0.30, 0.60, 1.0, 0.95),
-                    Color::new(0.20, 0.45, 0.92, 0.95),
-                    "B",
-                ),
-                TouchButton::Y => (
-                    Color::new(1.0, 0.82, 0.25, 0.95),
-                    Color::new(0.92, 0.70, 0.15, 0.95),
-                    "Y",
-                ),
-                TouchButton::Next => (
-                    Color::new(0.80, 0.45, 1.0, 0.95),
-                    Color::new(0.68, 0.28, 0.92, 0.95),
-                    "NEXT",
-                ),
-                TouchButton::Start => (
-                    Color::new(0.90, 0.92, 0.96, 0.90),
-                    Color::new(0.80, 0.82, 0.88, 0.90),
-                    "+",
-                ),
+            let label = match btn {
+                TouchButton::A => "JUMP",
+                TouchButton::X => "SLASH",
+                TouchButton::B => "THROW",
+                TouchButton::Y => "USE",
+                TouchButton::Next => "SWAP",
+                TouchButton::Start => "+",
             };
 
             let bg_color = if is_held {
-                fill_color
+                Color::new(0.95, 0.95, 0.98, 0.42)
             } else {
-                Color::new(0.04, 0.03, 0.06, 0.62)
+                Color::new(0.06, 0.07, 0.10, 0.22) // Highly translucent dark glass (~78% transparent)
             };
 
             let border_color = if is_held {
                 WHITE
             } else {
-                accent_color
+                Color::new(0.88, 0.90, 0.95, 0.38) // Sleek frosted silver ring
+            };
+
+            let icon_color = if is_held {
+                WHITE
+            } else {
+                Color::new(0.90, 0.92, 0.96, 0.65) // Soft semi-transparent white/silver
             };
 
             // Soft drop shadow
-            draw_circle(center.x + 1.5 * s, center.y + 1.5 * s, radius, Color::new(0.0, 0.0, 0.0, 0.35));
+            draw_circle(center.x + 1.5 * s, center.y + 1.5 * s, radius, Color::new(0.0, 0.0, 0.0, 0.20));
 
             // Main body
             draw_circle(center.x, center.y, radius, bg_color);
-            draw_circle_lines(center.x, center.y, radius, 2.0 * s, border_color);
+            draw_circle_lines(center.x, center.y, radius, 1.8 * s, border_color);
 
-            // Subtle inner ring for tactical depth
+            // Subtle inner ring
             if !is_held {
-                draw_circle_lines(center.x, center.y, radius * 0.78, 1.0 * s, Color::new(border_color.r, border_color.g, border_color.b, 0.30));
+                draw_circle_lines(center.x, center.y, radius * 0.82, 1.0 * s, Color::new(1.0, 1.0, 1.0, 0.12));
             }
 
-            let btn_rect = Rect::new(center.x - radius, center.y - radius, radius * 2.0, radius * 2.0);
-            let font_size = if label == "NEXT" {
-                11.0 * s
-            } else if label == "+" {
-                18.0 * s
-            } else {
-                16.0 * s
-            };
+            // Draw custom vector icon based on action
+            match btn {
+                TouchButton::A => {
+                    // Jump / Climb: Upward leaping chevron / arrow
+                    let tip = center + vec2(0.0, -radius * 0.38);
+                    let left = center + vec2(-radius * 0.38, -radius * 0.02);
+                    let right = center + vec2(radius * 0.38, -radius * 0.02);
+                    draw_line(tip.x, tip.y, left.x, left.y, 3.2 * s, icon_color);
+                    draw_line(tip.x, tip.y, right.x, right.y, 3.2 * s, icon_color);
+                    draw_line(center.x, tip.y + 2.0 * s, center.x, center.y + radius * 0.18, 3.0 * s, icon_color);
+                    // Base step bar
+                    draw_line(center.x - radius * 0.30, center.y + radius * 0.24, center.x + radius * 0.30, center.y + radius * 0.24, 2.0 * s, icon_color);
+                }
+                TouchButton::X => {
+                    // Primary Attack (Vorpal Blade Slash): Angled razor dagger
+                    let tip = center + vec2(radius * 0.38, -radius * 0.38);
+                    let hilt = center + vec2(-radius * 0.12, radius * 0.12);
+                    let pommel = center + vec2(-radius * 0.34, radius * 0.34);
+                    // Pommel / grip
+                    draw_line(pommel.x, pommel.y, hilt.x, hilt.y, 3.5 * s, icon_color);
+                    // Crossguard
+                    let g1 = hilt + vec2(-radius * 0.18, -radius * 0.18);
+                    let g2 = hilt + vec2(radius * 0.18, radius * 0.18);
+                    draw_line(g1.x, g1.y, g2.x, g2.y, 2.8 * s, icon_color);
+                    // Blade spine
+                    draw_line(hilt.x, hilt.y, tip.x, tip.y, 4.0 * s, icon_color);
+                    // Curved blade belly
+                    let belly = hilt + vec2(radius * 0.06, -radius * 0.28);
+                    draw_triangle(hilt, tip, belly, icon_color);
+                }
+                TouchButton::B => {
+                    // Alt Attack (Blade Throw): Flying dagger with speed trails
+                    let tip = center + vec2(radius * 0.35, -radius * 0.28);
+                    let hilt = center + vec2(-radius * 0.15, radius * 0.15);
+                    draw_line(hilt.x, hilt.y, tip.x, tip.y, 3.2 * s, icon_color);
+                    let guard1 = hilt + vec2(-radius * 0.12, -radius * 0.12);
+                    let guard2 = hilt + vec2(radius * 0.12, radius * 0.12);
+                    draw_line(guard1.x, guard1.y, guard2.x, guard2.y, 2.2 * s, icon_color);
+                    // Speed lines behind
+                    draw_line(center.x - radius * 0.40, center.y - radius * 0.08, center.x - radius * 0.18, center.y - radius * 0.08, 1.8 * s, icon_color);
+                    draw_line(center.x - radius * 0.35, center.y + radius * 0.12, center.x - radius * 0.14, center.y + radius * 0.12, 1.8 * s, icon_color);
+                }
+                TouchButton::Y => {
+                    // Use / Interact (Key E): Open reaching hand / action spark
+                    let palm = center + vec2(0.0, radius * 0.08);
+                    draw_circle(palm.x, palm.y, radius * 0.20, icon_color);
+                    // 4 fingers
+                    draw_line(palm.x - radius * 0.16, palm.y, palm.x - radius * 0.22, palm.y - radius * 0.34, 2.5 * s, icon_color);
+                    draw_line(palm.x - radius * 0.06, palm.y, palm.x - radius * 0.06, palm.y - radius * 0.40, 2.5 * s, icon_color);
+                    draw_line(palm.x + radius * 0.06, palm.y, palm.x + radius * 0.06, palm.y - radius * 0.38, 2.5 * s, icon_color);
+                    draw_line(palm.x + radius * 0.16, palm.y, palm.x + radius * 0.20, palm.y - radius * 0.30, 2.5 * s, icon_color);
+                }
+                TouchButton::Next => {
+                    // Weapon Cycle: Circular swap arrows
+                    let arc_r = radius * 0.36;
+                    let c = center + vec2(0.0, -radius * 0.08);
+                    draw_circle_lines(c.x, c.y, arc_r, 2.2 * s, icon_color);
+                    // Arrowhead 1
+                    let a1 = c + vec2(arc_r, 0.0);
+                    draw_line(a1.x, a1.y, a1.x - 5.0 * s, a1.y - 5.0 * s, 2.2 * s, icon_color);
+                    draw_line(a1.x, a1.y, a1.x + 5.0 * s, a1.y - 5.0 * s, 2.2 * s, icon_color);
+                }
+                TouchButton::Start => {
+                    // Pause / Menu: Pause bars
+                    let bar_w = 3.2 * s;
+                    let bar_h = radius * 0.65;
+                    draw_rectangle(center.x - radius * 0.35, center.y - bar_h * 0.5, bar_w, bar_h, icon_color);
+                    draw_rectangle(center.x + radius * 0.35 - bar_w, center.y - bar_h * 0.5, bar_w, bar_h, icon_color);
+                }
+            }
 
-            ui.center(label, btn_rect, font_size, WHITE);
+            // High-res Gothic text label at the bottom of the button
+            if label != "+" {
+                let label_rect = Rect::new(center.x - radius, center.y + radius * 0.28, radius * 2.0, radius * 0.65);
+                let font_size = match btn {
+                    TouchButton::A | TouchButton::X => 9.5 * s,
+                    TouchButton::B | TouchButton::Y => 8.5 * s,
+                    TouchButton::Next => 8.0 * s,
+                    _ => 9.0 * s,
+                };
+                let text_color = if is_held {
+                    WHITE
+                } else {
+                    Color::new(0.90, 0.92, 0.96, 0.75)
+                };
+                ui.center(label, label_rect, font_size, text_color);
+            }
         }
     }
 }
