@@ -65,7 +65,7 @@ pub async fn run_launcher(
         set_default_camera();
         gl_use_default_material();
 
-        let content = Rect::new(margin, margin, w - margin * 2., h - margin * 2.);
+        let content = Rect::new(0., 0., w, h);
         ui.panel(content);
         let title_h = (h * 0.15).clamp(64., 130.);
         ui.label("AMERICAN McGEE'S", content.x + margin, content.y + title_h * 0.32, title_h * 0.20, WHITE);

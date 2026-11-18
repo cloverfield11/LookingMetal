@@ -16,7 +16,7 @@ mod metal;
 pub use gl::GlContext;
 
 #[cfg(target_vendor = "apple")]
-pub use metal::MetalContext;
+pub use metal::{metal_set_depth_write, MetalContext};
 
 #[derive(Clone, Copy, Debug)]
 pub enum UniformType {
@@ -1154,7 +1154,7 @@ pub trait RenderingBackend {
                 width: width as _,
                 height: height as _,
                 format: TextureFormat::RGBA8,
-                wrap: TextureWrap::Clamp,
+                wrap: TextureWrap::Repeat,
                 min_filter: FilterMode::Linear,
                 mag_filter: FilterMode::Linear,
                 mipmap_filter: MipmapFilterMode::None,

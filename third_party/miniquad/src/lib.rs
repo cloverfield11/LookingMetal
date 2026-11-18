@@ -22,6 +22,11 @@ pub use event::*;
 
 pub use graphics::*;
 
+#[cfg(target_vendor = "apple")]
+pub use graphics::metal_set_depth_write;
+#[cfg(not(target_vendor = "apple"))]
+pub fn metal_set_depth_write(_enabled: bool) {}
+
 mod default_icon;
 
 pub use native::gl;

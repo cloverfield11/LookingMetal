@@ -90,6 +90,12 @@ pub async fn choose(
     store: &Store,
     maps: &[String],
 ) -> Start {
+    // Initialize our launcher settings at the top
+    let mut launcher_settings = crate::launcher::LauncherSettings::load();
+
+    // Ensure HUD matches current settings
+    set_performance_hud_visible(launcher_settings.metal_hud);
+    
     // 1. Prepare Continue option from latest save
     let latest_save = store.latest();
     let has_continue = latest_save.is_some();

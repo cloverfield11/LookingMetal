@@ -1446,6 +1446,7 @@ fn run() -> Result<()> {
         });
         return Ok(());
     }
+    // Remove HUD restart logic
     if mode == "school-render" {
         macroquad::Window::from_config(viewer::config(), async move {
             if let Err(e) = school::check_render(&mut assets).await {

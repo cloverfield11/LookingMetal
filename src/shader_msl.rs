@@ -91,6 +91,7 @@ struct RasterizerData {
 vertex RasterizerData vertexShader(VertexIn v [[stage_in]], constant Uniforms& uniforms [[buffer(0)]]) {
     RasterizerData out;
     out.position = uniforms.Projection * uniforms.Model * float4(v.position, 1.0);
+    out.position.z = (out.position.z + out.position.w) * 0.5;
     out.color = v.color0 / 255.0;
     out.uv = v.texcoord;
     return out;
@@ -130,6 +131,7 @@ struct RasterizerData {
 vertex RasterizerData vertexShader(VertexIn v [[stage_in]], constant Uniforms& uniforms [[buffer(0)]]) {
     RasterizerData out;
     out.position = uniforms.Projection * uniforms.Model * float4(v.position, 1.0);
+    out.position.z = (out.position.z + out.position.w) * 0.5;
     out.screenPosition = out.position;
     return out;
 }
@@ -256,6 +258,7 @@ vertex RasterizerData vertexShader(VertexIn v [[stage_in]], constant WorldUnifor
     RasterizerData out;
     out.worldPosition = (uniforms.Model * float4(v.position, 1.0)).xyz;
     out.position = uniforms.Projection * float4(out.worldPosition, 1.0);
+    out.position.z = (out.position.z + out.position.w) * 0.5;
     out.uv = v.texcoord;
     out.lm = v.normal.xyz;
     out.color = v.color0 / 255.0;
@@ -420,6 +423,7 @@ vertex RasterizerData vertexShader(VertexIn v [[stage_in]], constant CharacterUn
     RasterizerData out;
     out.worldPosition = (uniforms.Model * float4(v.position, 1.0)).xyz;
     out.position = uniforms.Projection * float4(out.worldPosition, 1.0);
+    out.position.z = (out.position.z + out.position.w) * 0.5;
     out.uv = v.texcoord;
     out.color = v.color0 / 255.0;
     return out;
@@ -533,6 +537,7 @@ vertex RasterizerData vertexShader(VertexIn v [[stage_in]], constant ParticleUni
     RasterizerData out;
     out.worldPosition = (uniforms.Model * float4(v.position, 1.0)).xyz;
     out.position = uniforms.Projection * float4(out.worldPosition, 1.0);
+    out.position.z = (out.position.z + out.position.w) * 0.5;
     out.uv = v.texcoord;
     out.color = v.color0 / 255.0;
     return out;
@@ -632,6 +637,7 @@ vertex RasterizerData vertexShader(VertexIn v [[stage_in]], constant WeaponUnifo
     RasterizerData out;
     out.worldPosition = (uniforms.Model * float4(v.position, 1.0)).xyz;
     out.position = uniforms.Projection * float4(out.worldPosition, 1.0);
+    out.position.z = (out.position.z + out.position.w) * 0.5;
     out.uv = v.texcoord;
     out.color = v.color0 / 255.0;
     return out;
@@ -729,6 +735,7 @@ vertex RasterizerData vertexShader(VertexIn v [[stage_in]], constant LootUniform
     RasterizerData out;
     out.worldPosition = (uniforms.Model * float4(v.position, 1.0)).xyz;
     out.position = uniforms.Projection * float4(out.worldPosition, 1.0);
+    out.position.z = (out.position.z + out.position.w) * 0.5;
     out.uv = v.texcoord;
     out.color = v.color0 / 255.0;
     return out;
@@ -824,6 +831,7 @@ vertex RasterizerData vertexShader(VertexIn v [[stage_in]], constant DepthCheckU
     RasterizerData out;
     out.worldPosition = (uniforms.Model * float4(v.position, 1.0)).xyz;
     out.position = uniforms.Projection * float4(out.worldPosition, 1.0);
+    out.position.z = (out.position.z + out.position.w) * 0.5;
     out.color = v.color0 / 255.0;
     return out;
 }

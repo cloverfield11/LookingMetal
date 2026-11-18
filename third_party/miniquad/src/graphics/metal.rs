@@ -225,10 +225,21 @@ struct RenderPassInternal {
     _depth_texture: Option<TextureId>,
 }
 
-#[derive(Clone, Debug)]
+static METAL_DEPTH_WRITE_ENABLED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(true);
+
+pub fn metal_set_depth_write(enabled: bool) {
+    METAL_DEPTH_WRITE_ENABLED.store(enabled, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn is_metal_depth_write_enabled() -> bool {
+    METAL_DEPTH_WRITE_ENABLED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 struct PipelineInternal {
     pipeline_state: ObjcId,
     depth_stencil_state: ObjcId,
+    depth_stencil_state_nowrite: ObjcId,
     //layout: Vec<BufferLayout>,
     //attributes: Vec<VertexAttributeInternal>,
     _shader: ShaderId,
@@ -279,6 +290,11 @@ pub struct MetalContext {
     // cached pipeline from apply_pipeline
     current_pipeline: Option<Pipeline>,
     current_ub_offset: u64,
+    // Macroquad begins/ends a pass per draw call. Keep the encoder open after
+    // end_render_pass and reuse it when the next pass targets the same
+    // attachment without clearing: avoids a full load/store per draw.
+    lingering_encoder: Option<(ObjcId, Option<RenderPass>)>,
+    current_pass_target: Option<RenderPass>,
 }
 
 impl Default for MetalContext {
@@ -340,13 +356,16 @@ impl MetalContext {
                 }
             }
 
-            #[cfg(target_os = "macos")]
+            #[cfg(target_arch = "aarch64")]
+            let options = {
+                MTLResourceOptions::CPUCacheModeWriteCombined
+                    | MTLResourceOptions::StorageModeShared
+            };
+            #[cfg(not(target_arch = "aarch64"))]
             let options = {
                 MTLResourceOptions::CPUCacheModeWriteCombined
                     | MTLResourceOptions::StorageModeManaged
             };
-            #[cfg(target_os = "ios")]
-            let options = { MTLResourceOptions::CPUCacheModeWriteCombined };
 
             let uniform_buffers = [
                 msg_send![device, newBufferWithLength:MAX_UNIFORM_BUFFER_SIZE
@@ -373,6 +392,18 @@ impl MetalContext {
                 uniform_buffers,
                 current_frame_index: 1,
                 current_ub_offset: 0,
+                lingering_encoder: None,
+                current_pass_target: None,
+            }
+        }
+    }
+}
+
+impl MetalContext {
+    fn close_lingering(&mut self) {
+        if let Some((encoder, _)) = self.lingering_encoder.take() {
+            unsafe {
+                let () = msg_send![encoder, endEncoding];
             }
         }
     }
@@ -441,12 +472,11 @@ impl RenderingBackend for MetalContext {
         };
 
         texture.sampler = unsafe {
-            let sampler_descriptor = msg_send_![class!(MTLSamplerDescriptor), new];
-            msg_send_![sampler_descriptor, setMinFilter: filter];
-            msg_send_![sampler_descriptor, setMipFilter: mipmap_filter];
+            msg_send_![texture.sampler_descriptor, setMinFilter: filter];
+            msg_send_![texture.sampler_descriptor, setMipFilter: mipmap_filter];
             msg_send_![
                 self.device,
-                newSamplerStateWithDescriptor: sampler_descriptor
+                newSamplerStateWithDescriptor: texture.sampler_descriptor
             ]
         };
     }
@@ -465,6 +495,7 @@ impl RenderingBackend for MetalContext {
     }
     fn texture_set_wrap(&mut self, texture: TextureId, wrap_x: TextureWrap, wrap_y: TextureWrap) {
         let texture = self.textures.get_mut(texture);
+        texture.params.wrap = wrap_x;
 
         let wrap_s = match wrap_x {
             TextureWrap::Repeat => MTLSamplerAddressMode::Repeat,
@@ -479,9 +510,9 @@ impl RenderingBackend for MetalContext {
         };
 
         texture.sampler = unsafe {
-            //msg_send_![texture.sampler_descriptor, setRAddressMode: wrap];
-            msg_send_![texture.sampler_descriptor, setSAddressMode: wrap_s];
-            msg_send_![texture.sampler_descriptor, setTAddressMode: wrap_t];
+            let () = msg_send![texture.sampler_descriptor, setSAddressMode: wrap_s as u64];
+            let () = msg_send![texture.sampler_descriptor, setTAddressMode: wrap_t as u64];
+            let () = msg_send![texture.sampler_descriptor, setRAddressMode: wrap_s as u64];
             msg_send_![self.device, newSamplerStateWithDescriptor: texture.sampler_descriptor]
         };
     }
@@ -494,10 +525,53 @@ impl RenderingBackend for MetalContext {
     ) {
         unimplemented!()
     }
-    fn texture_read_pixels(&mut self, _texture: TextureId, _bytes: &mut [u8]) {
-        unimplemented!()
+    fn texture_read_pixels(&mut self, texture: TextureId, bytes: &mut [u8]) {
+        let t = self.textures.get(texture);
+        let width = t.params.width as u64;
+        let height = t.params.height as u64;
+        let bpp = t.params.format.size(1, 1) as u64;
+        let row = width * bpp;
+        let len = row * height;
+        if len == 0 || (bytes.len() as u64) < len {
+            return;
+        }
+        self.close_lingering();
+        unsafe {
+            // Readback must happen outside an encoder; close a stray one.
+            if let Some(encoder) = self.render_encoder.take() {
+                let () = msg_send![encoder, endEncoding];
+                self.index_buffer = None;
+            }
+            let command_buffer: ObjcId = match self.command_buffer.take() {
+                Some(cb) => cb,
+                None => msg_send![self.command_queue, commandBuffer],
+            };
+            let buffer: ObjcId = msg_send![self.device,
+                newBufferWithLength: len
+                options: MTLResourceOptions::StorageModeShared];
+            let blit: ObjcId = msg_send![command_buffer, blitCommandEncoder];
+            let () = msg_send![blit,
+                copyFromTexture: t.texture
+                sourceSlice: 0u64
+                sourceLevel: 0u64
+                sourceOrigin: MTLOrigin { x: 0, y: 0, z: 0 }
+                sourceSize: MTLSize { width, height, depth: 1 }
+                toBuffer: buffer
+                destinationOffset: 0u64
+                destinationBytesPerRow: row
+                destinationBytesPerImage: len];
+            let () = msg_send![blit, endEncoding];
+            let () = msg_send![command_buffer, commit];
+            let () = msg_send![command_buffer, waitUntilCompleted];
+            let src: *const u8 = msg_send![buffer, contents];
+            std::ptr::copy_nonoverlapping(src, bytes.as_mut_ptr(), len as usize);
+            let () = msg_send![buffer, release];
+            // The frame continues; commit_frame expects a live command buffer.
+            self.command_buffer = Some(msg_send![self.command_queue, commandBuffer]);
+        }
     }
     fn texture_generate_mipmaps(&mut self, texture: TextureId) {
+        self.close_lingering();
         unsafe {
             if self.command_buffer.is_none() {
                 self.command_buffer = Some(msg_send![self.command_queue, commandBuffer]);
@@ -617,11 +691,12 @@ impl RenderingBackend for MetalContext {
                               options:MTLResourceOptions::StorageModeShared]
                 }
             } else {
-                #[cfg(target_os = "macos")]
+                #[cfg(target_arch = "aarch64")]
+                let options = MTLResourceOptions::CPUCacheModeWriteCombined
+                    | MTLResourceOptions::StorageModeShared;
+                #[cfg(not(target_arch = "aarch64"))]
                 let options = MTLResourceOptions::CPUCacheModeWriteCombined
                     | MTLResourceOptions::StorageModeManaged;
-                #[cfg(target_os = "ios")]
-                let options = MTLResourceOptions::CPUCacheModeWriteCombined;
                 unsafe {
                     msg_send![self.device,
                               newBufferWithLength:size
@@ -656,7 +731,7 @@ impl RenderingBackend for MetalContext {
             let dest: *mut std::ffi::c_void = msg_send![buffer.raw[buffer.next_value], contents];
             std::ptr::copy(data.ptr, dest, data.size);
 
-            #[cfg(target_os = "macos")]
+            #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
             msg_send_![buffer.raw[buffer.next_value], didModifyRange:NSRange::new(0, data.size as u64)];
         }
         buffer.value = buffer.next_value;
@@ -782,6 +857,20 @@ impl RenderingBackend for MetalContext {
             msg_send_![sampler_descriptor, setMinFilter: min_filter];
             msg_send_![sampler_descriptor, setMagFilter: mag_filter];
             msg_send_![sampler_descriptor, setMipFilter: mipmap_filter];
+
+            let wrap_s = match params.wrap {
+                TextureWrap::Repeat => MTLSamplerAddressMode::Repeat,
+                TextureWrap::Mirror => MTLSamplerAddressMode::MirrorRepeat,
+                TextureWrap::Clamp => MTLSamplerAddressMode::ClampToEdge,
+            };
+            let wrap_t = match params.wrap {
+                TextureWrap::Repeat => MTLSamplerAddressMode::Repeat,
+                TextureWrap::Mirror => MTLSamplerAddressMode::MirrorRepeat,
+                TextureWrap::Clamp => MTLSamplerAddressMode::ClampToEdge,
+            };
+            let () = msg_send![sampler_descriptor, setSAddressMode: wrap_s as u64];
+            let () = msg_send![sampler_descriptor, setTAddressMode: wrap_t as u64];
+            let () = msg_send![sampler_descriptor, setRAddressMode: wrap_s as u64];
 
             let sampler_state = msg_send_![
                 self.device,
@@ -1012,38 +1101,24 @@ impl RenderingBackend for MetalContext {
             msg_send_![depth_stencil_desc, setDepthWriteEnabled: BOOL::from(params.depth_write)];
             msg_send_![depth_stencil_desc, setDepthCompareFunction: MTLCompareFunction::from(params.depth_test)];
 
-            // if let Some(stencil_test) = params.stencil_test {
-            //     let back_face_stencil_desc = StencilDescriptor::new();
-            //     back_face_stencil_desc.set_stencil_compare_function(stencil_test.back.test_func.into());
-            //     back_face_stencil_desc.set_stencil_failure_operation(stencil_test.back.fail_op.into());
-            //     back_face_stencil_desc
-            //         .set_depth_failure_operation(stencil_test.back.depth_fail_op.into());
-            //     back_face_stencil_desc.set_read_mask(stencil_test.back.test_mask);
-            //     back_face_stencil_desc.set_write_mask(stencil_test.back.write_mask);
-
-            //     depth_stencil_desc.set_back_face_stencil(Some(back_face_stencil_desc.as_ref()));
-
-            //     let front_face_stencil_desc = StencilDescriptor::new();
-            //     front_face_stencil_desc
-            //         .set_stencil_compare_function(stencil_test.front.test_func.into());
-            //     front_face_stencil_desc
-            //         .set_stencil_failure_operation(stencil_test.front.fail_op.into());
-            //     front_face_stencil_desc
-            //         .set_depth_failure_operation(stencil_test.front.depth_fail_op.into());
-            //     front_face_stencil_desc.set_read_mask(stencil_test.front.test_mask);
-            //     front_face_stencil_desc.set_write_mask(stencil_test.front.write_mask);
-
-            //     depth_stencil_desc.set_front_face_stencil(Some(front_face_stencil_desc.as_ref()))
-            // }
-
             let depth_stencil_state = msg_send_![
                 self.device,
                 newDepthStencilStateWithDescriptor: depth_stencil_desc
             ];
 
+            let depth_stencil_desc_nowrite = msg_send_![class!(MTLDepthStencilDescriptor), new];
+            msg_send_![depth_stencil_desc_nowrite, setDepthWriteEnabled: BOOL::from(false)];
+            msg_send_![depth_stencil_desc_nowrite, setDepthCompareFunction: MTLCompareFunction::from(params.depth_test)];
+
+            let depth_stencil_state_nowrite = msg_send_![
+                self.device,
+                newDepthStencilStateWithDescriptor: depth_stencil_desc_nowrite
+            ];
+
             let pipeline = PipelineInternal {
                 pipeline_state,
                 depth_stencil_state,
+                depth_stencil_state_nowrite,
                 //layout: buffer_layout.to_vec(),
                 //attributes: vertex_layout,
                 _shader: shader,
@@ -1068,7 +1143,12 @@ impl RenderingBackend for MetalContext {
             let pipeline = &self.pipelines[pipeline.0];
 
             msg_send_![render_encoder, setRenderPipelineState: pipeline.pipeline_state];
-            msg_send_![render_encoder, setDepthStencilState:pipeline.depth_stencil_state];
+            let dss = if is_metal_depth_write_enabled() {
+                pipeline.depth_stencil_state
+            } else {
+                pipeline.depth_stencil_state_nowrite
+            };
+            msg_send_![render_encoder, setDepthStencilState: dss];
             // render_encoder.set_front_facing_winding(pipeline.params.front_face_order.into());
             // render_encoder.set_cull_mode(pipeline.params.cull_face.into());
         }
@@ -1128,11 +1208,8 @@ impl RenderingBackend for MetalContext {
 
         let render_encoder = self.render_encoder.unwrap();
 
-        self.current_frame_index = (self.current_frame_index + 1) % NUM_INFLIGHT_FRAMES;
-
         assert!(size < MAX_UNIFORM_BUFFER_SIZE as usize);
-
-        assert!(self.current_ub_offset < MAX_UNIFORM_BUFFER_SIZE);
+        assert!(self.current_ub_offset + size as u64 <= MAX_UNIFORM_BUFFER_SIZE);
 
         let buffer = self.uniform_buffers[self.current_frame_index];
         unsafe {
@@ -1143,8 +1220,8 @@ impl RenderingBackend for MetalContext {
                 size,
             );
 
-            #[cfg(target_os = "macos")]
-            msg_send_![buffer, didModifyRange:NSRange::new(0, size as u64)];
+            #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
+            msg_send_![buffer, didModifyRange:NSRange::new(self.current_ub_offset, size as u64)];
 
             msg_send_![render_encoder,
                        setVertexBuffer:buffer
@@ -1163,6 +1240,14 @@ impl RenderingBackend for MetalContext {
     }
 
     fn begin_pass(&mut self, pass: Option<RenderPass>, action: PassAction) {
+        if let Some((encoder, target)) = self.lingering_encoder {
+            if target == pass && matches!(action, PassAction::Nothing) {
+                self.lingering_encoder = None;
+                self.render_encoder = Some(encoder);
+                return;
+            }
+        }
+        self.close_lingering();
         unsafe {
             if self.command_buffer.is_none() {
                 self.command_buffer = Some(msg_send![self.command_queue, commandBuffer]);
@@ -1204,14 +1289,51 @@ impl RenderingBackend for MetalContext {
 
             match action {
                 PassAction::Clear { color, .. } => {
-                    msg_send_![color_attachment, setLoadAction: MTLLoadAction::Clear];
-
                     if let Some(color) = color {
+                        msg_send_![color_attachment, setLoadAction: MTLLoadAction::Clear];
                         msg_send_![color_attachment, setClearColor:MTLClearColor::new(color.0 as _, color.1 as _, color.2 as _, color.3 as _)];
+                    } else {
+                        msg_send_![color_attachment, setLoadAction: MTLLoadAction::Load];
                     }
                 }
                 PassAction::Nothing => {
                     msg_send_![color_attachment, setLoadAction: MTLLoadAction::Load];
+                }
+            }
+
+            // Macroquad opens a new encoder per draw call. MTKView defaults the
+            // depth/stencil attachment to Clear/DontCare, which wiped depth
+            // between every mesh. Preserve it unless a clear is requested.
+            let depth_attachment: ObjcId = msg_send![descriptor, depthAttachment];
+            if !depth_attachment.is_null() {
+                let depth_tex: ObjcId = msg_send![depth_attachment, texture];
+                if !depth_tex.is_null() {
+                    msg_send_![depth_attachment, setStoreAction: MTLStoreAction::Store];
+                    match action {
+                        PassAction::Clear { depth: Some(d), .. } => {
+                            msg_send_![depth_attachment, setLoadAction: MTLLoadAction::Clear];
+                            let () = msg_send![depth_attachment, setClearDepth: d as f64];
+                        }
+                        _ => {
+                            msg_send_![depth_attachment, setLoadAction: MTLLoadAction::Load];
+                        }
+                    }
+                }
+            }
+            let stencil_attachment: ObjcId = msg_send![descriptor, stencilAttachment];
+            if !stencil_attachment.is_null() {
+                let stencil_tex: ObjcId = msg_send![stencil_attachment, texture];
+                if !stencil_tex.is_null() {
+                    msg_send_![stencil_attachment, setStoreAction: MTLStoreAction::Store];
+                    match action {
+                        PassAction::Clear { stencil: Some(s), .. } => {
+                            msg_send_![stencil_attachment, setLoadAction: MTLLoadAction::Clear];
+                            let () = msg_send![stencil_attachment, setClearStencil: s as u32];
+                        }
+                        _ => {
+                            msg_send_![stencil_attachment, setLoadAction: MTLLoadAction::Load];
+                        }
+                    }
                 }
             }
 
@@ -1236,6 +1358,7 @@ impl RenderingBackend for MetalContext {
             // });
 
             self.render_encoder = Some(render_encoder);
+            self.current_pass_target = pass;
         }
     }
 
@@ -1245,10 +1368,8 @@ impl RenderingBackend for MetalContext {
             "end_render_pass unpaired with begin_render_pass!"
         );
 
-        let render_encoder = self.render_encoder.unwrap();
-        unsafe { msg_send_!(render_encoder, endEncoding) };
-
-        self.render_encoder = None;
+        let render_encoder = self.render_encoder.take().unwrap();
+        self.lingering_encoder = Some((render_encoder, self.current_pass_target));
         self.index_buffer = None;
     }
 
@@ -1280,6 +1401,7 @@ impl RenderingBackend for MetalContext {
     }
 
     fn commit_frame(&mut self) {
+        self.close_lingering();
         unsafe {
             assert!(!self.command_queue.is_null());
             let drawable: ObjcId = msg_send!(self.view, currentDrawable);
@@ -1303,8 +1425,6 @@ impl RenderingBackend for MetalContext {
         self.current_ub_offset = 0;
         self.current_pipeline = None;
         self.command_buffer = None;
-        if (self.current_frame_index + 1) >= 3 {
-            self.current_frame_index = 0;
-        }
+        self.current_frame_index = (self.current_frame_index + 1) % NUM_INFLIGHT_FRAMES;
     }
 }

@@ -1720,14 +1720,19 @@ pub fn depth_read_only(draw: impl FnOnce()) {
         get_internal_gl().flush();
         if !is_metal {
             macroquad::miniquad::gl::glDepthMask(0);
+        } else {
+            macroquad::miniquad::metal_set_depth_write(false);
         }
     }
     struct Restore(bool);
     impl Drop for Restore {
         fn drop(&mut self) {
-            if !self.0 {
-                unsafe {
+            unsafe {
+                get_internal_gl().flush();
+                if !self.0 {
                     macroquad::miniquad::gl::glDepthMask(1);
+                } else {
+                    macroquad::miniquad::metal_set_depth_write(true);
                 }
             }
         }
@@ -1756,6 +1761,19 @@ pub fn clear_view_depth() {
         if !crate::shader_msl::is_metal() {
             macroquad::miniquad::gl::glDepthMask(1);
             macroquad::miniquad::gl::glClear(macroquad::miniquad::gl::GL_DEPTH_BUFFER_BIT);
+        } else {
+            macroquad::miniquad::metal_set_depth_write(true);
+            let gl = get_internal_gl();
+            let pass = gl.quad_gl.get_active_render_pass();
+            gl.quad_context.begin_pass(
+                pass,
+                macroquad::miniquad::PassAction::Clear {
+                    color: None,
+                    depth: Some(1.0),
+                    stencil: None,
+                },
+            );
+            gl.quad_context.end_render_pass();
         }
     }
 }

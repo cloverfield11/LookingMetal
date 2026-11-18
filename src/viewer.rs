@@ -23,7 +23,7 @@ pub fn config() -> macroquad::conf::Conf {
         }
     };
     #[cfg(not(target_vendor = "apple"))]
-    let apple_gfx_api = miniquad::conf::AppleGfxApi::OpenGl;
+    let apple_gfx_api = miniquad::conf::AppleGfxApi::Metal;
 
     macroquad::conf::Conf {
         miniquad_conf: Conf {
@@ -566,7 +566,6 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
     let mut preferences = crate::preferences::Preferences::load();
     #[allow(unused_mut)]
     let mut launcher_settings = crate::launcher::LauncherSettings::load();
-
     let run_touch_ui = {
         #[cfg(target_os = "ios")]
         { true }
@@ -574,17 +573,6 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
         { options.touch_mode }
     };
 
-    if run_touch_ui {
-        macroquad::input::simulate_mouse_with_touch(false);
-        #[cfg(target_os = "ios")]
-        {
-            // Default to 120 FPS on iOS ProMotion displays
-            macroquad::miniquad::native::ios::set_preferred_frames_per_second(120);
-            if launcher_settings.metal_hud || std::env::var("MTL_HUD_ENABLED").as_deref() == Ok("1") {
-                crate::ios_menu::set_performance_hud_visible(true);
-            }
-        }
-    }
 
     let mut input = crate::input::Input::default();
     let mut weapon_buttons = crate::weapon_rules::Buttons::default();
