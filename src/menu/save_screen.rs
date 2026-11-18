@@ -57,10 +57,7 @@ pub(super) struct Film {
 impl Film {
     pub fn load(assets: &mut Assets) -> Result<Self> {
         let material = load_material(
-            ShaderSource::Glsl {
-                vertex: VERTEX,
-                fragment: FRAGMENT,
-            },
+            crate::shader_msl::make_source(VERTEX, FRAGMENT, crate::shader_msl::SAVE_SCREEN_MSL),
             MaterialParams {
                 pipeline_params: PipelineParams {
                     // scripts/ui.shader, ui/loadgame/sepia1. This is a film

@@ -1010,7 +1010,9 @@ pub async fn check(assets: &mut Assets) -> Result<()> {
                 ensure!(dropped == 0, "Queue budget exceeded in {name}");
                 unsafe {
                     get_internal_gl().flush();
-                    macroquad::miniquad::gl::glFinish();
+                    if !crate::shader_msl::is_metal() {
+                        macroquad::miniquad::gl::glFinish();
+                    }
                 }
                 if i > 1 {
                     let ms = start.elapsed().as_secs_f64() * 1000.;

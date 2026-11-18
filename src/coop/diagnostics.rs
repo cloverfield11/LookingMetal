@@ -3,6 +3,9 @@ use std::{path::PathBuf, sync::mpsc::{self, SyncSender}, thread};
 
 /// Call on the window thread after its OpenGL context has been initialized.
 pub fn renderer() -> String {
+    if crate::shader_msl::is_metal() {
+        return "Apple Metal (Native GPU)".into();
+    }
     // GL_RENDERER describes the active context, unlike enumerating installed GPUs.
     let name = unsafe { macroquad::miniquad::gl::glGetString(0x1F01) };
     if name.is_null() { return "Unknown renderer".into(); }

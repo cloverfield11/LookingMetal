@@ -1424,11 +1424,13 @@ impl Visuals {
         {
             props.push(Prop::load(assets, &name, &specs)?);
         }
+        let effect_frag_glsl = crate::environment::fragment(EFFECT_FRAGMENT);
         let effect_material = load_material(
-            ShaderSource::Glsl {
-                vertex: crate::character::VERTEX,
-                fragment: &crate::environment::fragment(EFFECT_FRAGMENT),
-            },
+            crate::shader_msl::make_source(
+                crate::character::VERTEX,
+                &effect_frag_glsl,
+                crate::shader_msl::WEAPON_EFFECT_MSL,
+            ),
             MaterialParams {
                 uniforms: crate::environment::uniforms(),
                 pipeline_params: crate::render::depth_pipeline(Some(BlendState::new(

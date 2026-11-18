@@ -1613,11 +1613,9 @@ pub(crate) fn skin_material() -> Result<SkinMaterial> {
         if let Some(material) = cache.borrow().upgrade() {
             return Ok(SkinMaterial(material));
         }
+        let frag_glsl = crate::environment::fragment(FRAGMENT);
         let material = load_material(
-            ShaderSource::Glsl {
-                vertex: VERTEX,
-                fragment: &crate::environment::fragment(FRAGMENT),
-            },
+            crate::shader_msl::make_source(VERTEX, &frag_glsl, crate::shader_msl::CHARACTER_MSL),
             MaterialParams {
                 uniforms: {
                     let mut u = crate::environment::uniforms();

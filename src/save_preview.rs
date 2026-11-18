@@ -226,7 +226,9 @@ impl Frame {
                 w as u16, h as u16, BLACK,
             )));
         }
-        self.texture.as_ref().unwrap().grab_screen();
+        if !crate::shader_msl::is_metal() {
+            self.texture.as_ref().unwrap().grab_screen();
+        }
     }
     pub fn preview(&self) -> Option<Preview> {
         Preview::encode(self.texture.as_ref()?.get_texture_data())

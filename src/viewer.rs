@@ -14,13 +14,28 @@ use anyhow::{Context, Result};
 use macroquad::prelude::*;
 
 pub fn config() -> macroquad::conf::Conf {
+    #[cfg(target_vendor = "apple")]
+    let apple_gfx_api = {
+        if std::env::var("LOOKING_GL").as_deref() == Ok("1") {
+            miniquad::conf::AppleGfxApi::OpenGl
+        } else {
+            miniquad::conf::AppleGfxApi::Metal
+        }
+    };
+    #[cfg(not(target_vendor = "apple"))]
+    let apple_gfx_api = miniquad::conf::AppleGfxApi::OpenGl;
+
     macroquad::conf::Conf {
         miniquad_conf: Conf {
-            window_title: "Looking Glass".into(),
+            window_title: "Looking Glass (Metal)".into(),
             window_width: 1200,
             window_height: 680,
             high_dpi: true,
             sample_count: 1,
+            platform: miniquad::conf::Platform {
+                apple_gfx_api,
+                ..Default::default()
+            },
             ..Default::default()
         },
         draw_call_vertex_capacity: 60000,

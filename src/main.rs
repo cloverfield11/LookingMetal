@@ -107,6 +107,7 @@ mod skeletal;
 mod sky;
 mod sky_performance_check;
 mod sky_sequence;
+pub mod shader_msl;
 mod snark;
 mod story;
 mod tan;

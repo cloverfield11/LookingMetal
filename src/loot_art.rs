@@ -177,12 +177,14 @@ fn material(filter: bool) -> Result<Rc<Material>> {
         } else {
             (BlendFactor::One, BlendFactor::One)
         };
+        let frag_glsl = crate::environment::fragment(FRAGMENT);
         let m = Rc::new(
             load_material(
-                ShaderSource::Glsl {
-                    vertex: crate::character::VERTEX,
-                    fragment: &crate::environment::fragment(FRAGMENT),
-                },
+                crate::shader_msl::make_source(
+                    crate::character::VERTEX,
+                    &frag_glsl,
+                    crate::shader_msl::LOOT_MSL,
+                ),
                 MaterialParams {
                     uniforms,
                     pipeline_params: crate::render::depth_pipeline(Some(BlendState::new(

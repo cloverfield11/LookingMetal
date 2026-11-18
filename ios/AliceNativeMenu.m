@@ -1039,7 +1039,12 @@ UIViewController* AliceGetRootViewController(void* hint) {
         for (UIWindowScene *scene in [UIApplication sharedApplication].connectedScenes) {
             if ([scene isKindOfClass:[UIWindowScene class]]) {
                 for (UIWindow *w in scene.windows) {
-                    if (w.isKeyWindow) { window = w; break; }
+                    if (w.isKeyWindow && w.rootViewController) { window = w; break; }
+                }
+                if (!window) {
+                    for (UIWindow *w in scene.windows) {
+                        if (w.rootViewController) { window = w; break; }
+                    }
                 }
             }
             if (window) break;

@@ -994,11 +994,13 @@ impl PickupBurst {
             }
             let mut uniforms = crate::environment::uniforms();
             uniforms.push(UniformDesc::new("Additive", UniformType::Float1));
+            let frag_glsl = crate::environment::fragment(FRAGMENT);
             let m = load_material(
-                ShaderSource::Glsl {
-                    vertex: crate::character::VERTEX,
-                    fragment: &crate::environment::fragment(FRAGMENT),
-                },
+                crate::shader_msl::make_source(
+                    crate::character::VERTEX,
+                    &frag_glsl,
+                    crate::shader_msl::PARTICLE_MSL,
+                ),
                 MaterialParams {
                     uniforms,
                     pipeline_params: crate::render::depth_pipeline(Some(BlendState::new(
@@ -1105,10 +1107,11 @@ fn shared_materials() -> Result<Vec<std::rc::Rc<Material>>> {
             let mut uniforms = crate::environment::uniforms();
             uniforms.push(UniformDesc::new("Additive", UniformType::Float1));
             let material = load_material(
-                ShaderSource::Glsl {
-                    vertex: crate::character::VERTEX,
-                    fragment: &fragment,
-                },
+                crate::shader_msl::make_source(
+                    crate::character::VERTEX,
+                    &fragment,
+                    crate::shader_msl::PARTICLE_MSL,
+                ),
                 MaterialParams {
                     uniforms,
                     pipeline_params: crate::render::depth_pipeline(Some(BlendState::new(

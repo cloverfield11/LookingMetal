@@ -321,10 +321,7 @@ pub(crate) fn world_material(index: usize) -> Result<Rc<Material>> {
         uniforms.extend(crate::environment::uniforms());
         let material = Rc::new(
             load_material(
-                ShaderSource::Glsl {
-                    vertex: VERTEX,
-                    fragment: &fragment,
-                },
+                crate::shader_msl::make_source(VERTEX, &fragment, crate::shader_msl::WORLD_MSL),
                 MaterialParams {
                     pipeline_params: PipelineParams {
                         depth_test: if index >= BLEND_COUNT {
@@ -1718,19 +1715,24 @@ impl Scene {
 /// This is specific to our OpenGL renderer; do not replace with a Metal backend
 /// without supplying an equivalent read-only depth attachment.
 pub fn depth_read_only(draw: impl FnOnce()) {
+    let is_metal = crate::shader_msl::is_metal();
     unsafe {
         get_internal_gl().flush();
-        macroquad::miniquad::gl::glDepthMask(0);
+        if !is_metal {
+            macroquad::miniquad::gl::glDepthMask(0);
+        }
     }
-    struct Restore;
+    struct Restore(bool);
     impl Drop for Restore {
         fn drop(&mut self) {
-            unsafe {
-                macroquad::miniquad::gl::glDepthMask(1);
+            if !self.0 {
+                unsafe {
+                    macroquad::miniquad::gl::glDepthMask(1);
+                }
             }
         }
     }
-    let _restore = Restore;
+    let _restore = Restore(is_metal);
     draw();
     unsafe {
         get_internal_gl().flush();
@@ -1751,8 +1753,10 @@ pub fn depth_pipeline(color_blend: Option<BlendState>) -> PipelineParams {
 pub fn clear_view_depth() {
     unsafe {
         get_internal_gl().flush();
-        macroquad::miniquad::gl::glDepthMask(1);
-        macroquad::miniquad::gl::glClear(macroquad::miniquad::gl::GL_DEPTH_BUFFER_BIT);
+        if !crate::shader_msl::is_metal() {
+            macroquad::miniquad::gl::glDepthMask(1);
+            macroquad::miniquad::gl::glClear(macroquad::miniquad::gl::GL_DEPTH_BUFFER_BIT);
+        }
     }
 }
 
@@ -2088,10 +2092,11 @@ pub async fn check_depth() -> Result<()> {
     for i in 0..7 {
         materials.push(
             load_material(
-                ShaderSource::Glsl {
-                    vertex: crate::character::VERTEX,
-                    fragment: &source,
-                },
+                crate::shader_msl::make_source(
+                    crate::character::VERTEX,
+                    &source,
+                    crate::shader_msl::DEPTH_CHECK_MSL,
+                ),
                 MaterialParams {
                     pipeline_params: depth_pipeline(blend(i)),
                     uniforms: crate::environment::uniforms(),

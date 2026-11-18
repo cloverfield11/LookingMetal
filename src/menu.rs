@@ -588,8 +588,8 @@ impl Menu {
                 384,
                 480,
                 RenderTargetParams {
+                    sample_count: 0,
                     depth: true,
-                    ..Default::default()
                 },
             ),
             material: crate::character::skin_material()?,

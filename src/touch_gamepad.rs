@@ -331,7 +331,7 @@ impl TouchGamepad {
             "Mouse 2" | "Alternate attack" => self.held_buttons.contains(&TouchButton::B),
             "Space" | "Jump / climb" => self.held_buttons.contains(&TouchButton::A),
             "E" | "Interact" => self.held_buttons.contains(&TouchButton::Y),
-            "Escape" | "Pause" => self.held_buttons.contains(&TouchButton::Start),
+            "Escape" => self.held_buttons.contains(&TouchButton::Start),
             _ => false,
         }
     }
@@ -346,7 +346,7 @@ impl TouchGamepad {
             "Wheel Down" | "Next toy" => self.pressed_buttons.contains(&TouchButton::Next),
             "Space" | "Jump / climb" => self.pressed_buttons.contains(&TouchButton::A),
             "E" | "Interact" => self.pressed_buttons.contains(&TouchButton::Y),
-            "Escape" | "Pause" => self.pressed_buttons.contains(&TouchButton::Start),
+            "Escape" => self.pressed_buttons.contains(&TouchButton::Start),
             _ => false,
         }
     }

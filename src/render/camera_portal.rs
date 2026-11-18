@@ -242,10 +242,7 @@ pub(super) fn load(
                 continue;
             }
             let material = load_material(
-                ShaderSource::Glsl {
-                    vertex: VERTEX,
-                    fragment: FRAGMENT,
-                },
+                crate::shader_msl::make_source(VERTEX, FRAGMENT, crate::shader_msl::CAMERA_PORTAL_MSL),
                 MaterialParams {
                     pipeline_params: PipelineParams {
                         depth_test: Comparison::LessOrEqual,
@@ -404,8 +401,8 @@ impl Scene {
                     width,
                     height,
                     RenderTargetParams {
+                        sample_count: 0,
                         depth: true,
-                        ..Default::default()
                     },
                 );
                 target.texture.set_filter(FilterMode::Linear);
