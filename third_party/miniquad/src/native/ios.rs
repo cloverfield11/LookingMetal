@@ -153,14 +153,18 @@ pub fn define_glk_or_mtk_view(superclass: &Class) -> *const Class {
                 };
                 let mut ios_pos: NSPoint = msg_send![ios_touch, locationInView: this];
 
-                if native_display().lock().unwrap().high_dpi {
-                    ios_pos.x *= 2.;
-                    ios_pos.y *= 2.;
+                let content_scale_factor: f64 = msg_send![this, contentScaleFactor];
+                let scale = if content_scale_factor > 0.0 {
+                    content_scale_factor
+                } else if native_display().lock().unwrap().high_dpi {
+                    let main_screen: ObjcId = msg_send![class!(UIScreen), mainScreen];
+                    let s: f64 = msg_send![main_screen, nativeScale];
+                    if s > 0.0 { s } else { 2.0 }
                 } else {
-                    let content_scale_factor: f64 = msg_send![this, contentScaleFactor];
-                    ios_pos.x *= content_scale_factor;
-                    ios_pos.y *= content_scale_factor;
-                }
+                    1.0
+                };
+                ios_pos.x *= scale;
+                ios_pos.y *= scale;
 
                 send_message(Message::Touch {
                     phase,
@@ -329,17 +333,23 @@ pub fn define_glk_or_mtk_view_dlg(superclass: &Class) -> *const Class {
         let screen_rect: NSRect = unsafe { msg_send![main_screen, bounds] };
         let high_dpi = native_display().lock().unwrap().high_dpi;
 
-        let (screen_width, screen_height) = if high_dpi {
-            (
-                screen_rect.size.width as i32 * 2,
-                screen_rect.size.height as i32 * 2,
-            )
-        } else {
-            let content_scale_factor: f64 = unsafe { msg_send![payload.view, contentScaleFactor] };
-            (
-                (screen_rect.size.width * content_scale_factor) as i32,
-                (screen_rect.size.height * content_scale_factor) as i32,
-            )
+        let (screen_width, screen_height) = {
+            let drawable_size: frameworks::NSSize = unsafe { msg_send![payload.view, drawableSize] };
+            if drawable_size.width > 0.0 && drawable_size.height > 0.0 {
+                (drawable_size.width as i32, drawable_size.height as i32)
+            } else {
+                let native_scale: f64 = unsafe { msg_send![main_screen, nativeScale] };
+                let scale = if high_dpi {
+                    if native_scale > 0.0 { native_scale } else { 2.0 }
+                } else {
+                    let csf: f64 = unsafe { msg_send![payload.view, contentScaleFactor] };
+                    if csf > 0.0 { csf } else { 1.0 }
+                };
+                (
+                    (screen_rect.size.width * scale) as i32,
+                    (screen_rect.size.height * scale) as i32,
+                )
+            }
         };
 
         if native_display().lock().unwrap().screen_width != screen_width
@@ -463,11 +473,14 @@ unsafe fn create_opengl_view(screen_rect: NSRect, _sample_count: i32, high_dpi: 
     msg_send_![glk_view_obj, setEnableSetNeedsDisplay: YES];
     msg_send_![glk_view_obj, setUserInteractionEnabled: YES];
     msg_send_![glk_view_obj, setMultipleTouchEnabled: YES];
-    if high_dpi {
-        msg_send_![glk_view_obj, setContentScaleFactor: 2.0];
+    let main_screen: ObjcId = msg_send![class!(UIScreen), mainScreen];
+    let native_scale: f64 = msg_send![main_screen, nativeScale];
+    let scale = if high_dpi {
+        if native_scale > 0.0 { native_scale } else { 2.0 }
     } else {
-        msg_send_![glk_view_obj, setContentScaleFactor: 1.0];
-    }
+        1.0
+    };
+    msg_send_![glk_view_obj, setContentScaleFactor: scale];
 
     let view_ctrl_obj: ObjcId = msg_send![class!(UIViewController), alloc];
     let view_ctrl_obj: ObjcId = msg_send![view_ctrl_obj, init];
@@ -483,7 +496,7 @@ unsafe fn create_opengl_view(screen_rect: NSRect, _sample_count: i32, high_dpi: 
     }
 }
 
-unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, _high_dpi: bool) -> View {
+unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, high_dpi: bool) -> View {
     let mtk_view_obj: ObjcId = msg_send![define_glk_or_mtk_view(class!(MTKView)), alloc];
     let mtk_view_obj: ObjcId = msg_send![mtk_view_obj, initWithFrame: screen_rect];
 
@@ -494,6 +507,15 @@ unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, _high_dpi: 
     let view_ctrl_obj: ObjcId = msg_send![view_ctrl_obj, init];
 
     msg_send_![view_ctrl_obj, setView: mtk_view_obj];
+
+    let main_screen: ObjcId = msg_send![class!(UIScreen), mainScreen];
+    let native_scale: f64 = msg_send![main_screen, nativeScale];
+    let scale = if high_dpi {
+        if native_scale > 0.0 { native_scale } else { 2.0 }
+    } else {
+        1.0
+    };
+    msg_send_![mtk_view_obj, setContentScaleFactor: scale];
 
     msg_send_![mtk_view_obj, setEnableSetNeedsDisplay: YES];
     msg_send_![mtk_view_obj, setPaused: YES];
@@ -550,17 +572,16 @@ pub fn define_app_delegate() -> *const Class {
             let main_screen: ObjcId = msg_send![class!(UIScreen), mainScreen];
             let screen_rect: NSRect = msg_send![main_screen, bounds];
 
-            let (_, _) = if conf.high_dpi {
-                (
-                    screen_rect.size.width as i32 * 2,
-                    screen_rect.size.height as i32 * 2,
-                )
+            let native_scale: f64 = msg_send![main_screen, nativeScale];
+            let scale = if conf.high_dpi {
+                if native_scale > 0.0 { native_scale } else { 2.0 }
             } else {
-                (
-                    screen_rect.size.width as i32,
-                    screen_rect.size.height as i32,
-                )
+                1.0
             };
+            let (_, _) = (
+                (screen_rect.size.width * scale) as i32,
+                (screen_rect.size.height * scale) as i32,
+            );
 
             let window_obj: ObjcId = msg_send![class!(UIWindow), alloc];
             let window_obj: ObjcId = msg_send![window_obj, initWithFrame: screen_rect];

@@ -443,12 +443,18 @@ impl RenderingBackend for MetalContext {
     fn apply_scissor_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
         assert!(self.render_encoder.is_some());
 
-        let (_, screen_height) = crate::window::screen_size();
+        let (_screen_width, screen_height) = crate::window::screen_size();
+        let target_h = if self.current_pass_target.is_some() {
+            // offscreen pass - height from pass target texture if available
+            screen_height as i32
+        } else {
+            screen_height as i32
+        };
         let r = MTLScissorRect {
-            x: x as _,
-            y: (screen_height as i32 - (y + h)) as u64,
-            width: w as _,
-            height: h as _,
+            x: (x as i64).max(0) as u64,
+            y: ((target_h - (y + h)) as i64).max(0) as u64,
+            width: (w as i64).max(0) as u64,
+            height: (h as i64).max(0) as u64,
         };
         unsafe { msg_send_![self.render_encoder.unwrap(), setScissorRect: r] };
     }

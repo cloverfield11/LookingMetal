@@ -730,15 +730,23 @@ static CAMetalLayer* AliceFindMetalLayer(UIView *v) {
 }
 
 __attribute__((constructor)) static void alice_hud_prelaunch(void) {
-    setenv("MTL_HUD_ENABLED", "1", 1);
-    setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
-    AliceLog(@"[LookingMetal] __attribute__((constructor)): setenv MTL_HUD_ENABLED=1 at dyld init");
+    if (AliceIsMetalHUDRequested()) {
+        setenv("MTL_HUD_ENABLED", "1", 1);
+        setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
+        AliceLog(@"[LookingMetal] __attribute__((constructor)): setenv MTL_HUD_ENABLED=1 at dyld init");
+    } else {
+        unsetenv("MTL_HUD_ENABLED");
+    }
 }
 
 void AlicePreMetalInit(void) {
-    setenv("MTL_HUD_ENABLED", "1", 1);
-    setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
-    AliceLog(@"[LookingMetal] AlicePreMetalInit: setenv MTL_HUD_ENABLED=1 before MTLCreateSystemDefaultDevice");
+    if (AliceIsMetalHUDRequested()) {
+        setenv("MTL_HUD_ENABLED", "1", 1);
+        setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
+        AliceLog(@"[LookingMetal] AlicePreMetalInit: setenv MTL_HUD_ENABLED=1 before MTLCreateSystemDefaultDevice");
+    } else {
+        unsetenv("MTL_HUD_ENABLED");
+    }
 }
 
 void AliceApplyMetalHUD(void* mtkViewPtr) {
@@ -927,59 +935,18 @@ void AliceApplyMetalHUD(void* mtkViewPtr) {
 static AlicePerformanceHUDView *s_hud_view = nil;
 
 void AlicePerformanceHUD_SetVisible(int visible) {
+    (void)visible;
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = nil;
-        if (@available(iOS 13.0, *)) {
-            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
-                if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
-                    window = ((UIWindowScene *)scene).windows.firstObject;
-                    break;
-                }
-            }
-        }
-        if (!window) window = [UIApplication sharedApplication].keyWindow;
-        if (!window && [UIApplication sharedApplication].windows.count > 0) {
-            window = [UIApplication sharedApplication].windows[0];
-        }
-        if (!window) return;
-
-        if (visible) {
-            if (!s_hud_view) {
-                UIEdgeInsets insets = UIEdgeInsetsZero;
-                if (@available(iOS 11.0, *)) {
-                    insets = window.safeAreaInsets;
-                }
-                CGFloat w = 142.0;
-                CGFloat h = 54.0;
-                CGFloat x = insets.left + 16.0;
-                CGFloat y = insets.top + 8.0;
-                s_hud_view = [[AlicePerformanceHUDView alloc] initWithFrame:CGRectMake(x, y, w, h)];
-                [window addSubview:s_hud_view];
-            }
-            s_hud_view.hidden = NO;
-            s_hud_view.alpha = 0.0;
-            [s_hud_view start];
-            [window bringSubviewToFront:s_hud_view];
-            [UIView animateWithDuration:0.25 animations:^{
-                s_hud_view.alpha = 1.0;
-            }];
-            AliceLog(@"[LookingMetal] Performance HUD view shown");
-        } else {
-            if (s_hud_view) {
-                [UIView animateWithDuration:0.2 animations:^{
-                    s_hud_view.alpha = 0.0;
-                } completion:^(BOOL finished) {
-                    s_hud_view.hidden = YES;
-                    [s_hud_view stop];
-                }];
-                AliceLog(@"[LookingMetal] Performance HUD view hidden");
-            }
+        if (s_hud_view) {
+            [s_hud_view stop];
+            [s_hud_view removeFromSuperview];
+            s_hud_view = nil;
         }
     });
 }
 
 int AlicePerformanceHUD_IsVisible(void) {
-    return (s_hud_view && !s_hud_view.hidden && s_hud_view.alpha > 0.01) ? 1 : 0;
+    return 0;
 }
 
 static int s_last_hud_state = -1;
