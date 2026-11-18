@@ -26,6 +26,8 @@
     <true/>
     <key>MetalPerformanceHUD</key>
     <true/>
+    <key>CADisableMinimumFrameDurationOnPhone</key>
+    <true/>
     <key>GCSupportedGameControllers</key>
     <array>
         <dict>

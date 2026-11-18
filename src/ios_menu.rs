@@ -27,8 +27,6 @@ pub struct AliceMenuResult {
     pub look_sens: c_float,
     pub invert_y: c_int,
     pub metal_hud: c_int,
-    pub fps_choice: c_int,
-    pub touch_scale: c_int,
 }
 
 #[repr(C)]
@@ -65,8 +63,6 @@ extern "C" {
         look_sens: c_float,
         invert_y: c_int,
         metal_hud: c_int,
-        fps_choice: c_int,
-        touch_scale: c_int,
     );
     fn AliceNativeMenu_HasAction() -> c_int;
     fn AliceNativeMenu_GetResult() -> AliceMenuResult;
@@ -216,8 +212,6 @@ pub async fn choose(
             preferences.sensitivity,
             if preferences.invert_mouse { 1 } else { 0 },
             initial_metal_hud,
-            launcher_settings.fps_choice as c_int,
-            launcher_settings.touch_scale as c_int,
         );
     }
 
@@ -237,17 +231,8 @@ pub async fn choose(
     preferences.invert_mouse = res.invert_y != 0;
     preferences.invert_pad = res.invert_y != 0;
 
-    let target_fps = match res.fps_choice {
-        0 => 30,
-        2 => 120,
-        _ => 60,
-    };
-    macroquad::miniquad::native::ios::set_preferred_frames_per_second(target_fps);
-
     let mut launcher_settings = crate::launcher::LauncherSettings::load();
     launcher_settings.metal_hud = res.metal_hud != 0;
-    launcher_settings.fps_choice = res.fps_choice as usize;
-    launcher_settings.touch_scale = res.touch_scale as usize;
     launcher_settings.save();
 
     // Small delay to let the UIKit fade-out animation play smoothly
@@ -435,8 +420,6 @@ pub async fn pause_menu(
             preferences.sensitivity,
             if preferences.invert_mouse { 1 } else { 0 },
             initial_metal_hud,
-            launcher_settings.fps_choice as c_int,
-            launcher_settings.touch_scale as c_int,
         );
     }
 
@@ -456,17 +439,8 @@ pub async fn pause_menu(
     preferences.invert_mouse = res.invert_y != 0;
     preferences.invert_pad = res.invert_y != 0;
 
-    let target_fps = match res.fps_choice {
-        0 => 30,
-        2 => 120,
-        _ => 60,
-    };
-    macroquad::miniquad::native::ios::set_preferred_frames_per_second(target_fps);
-
     let mut launcher_settings = crate::launcher::LauncherSettings::load();
     launcher_settings.metal_hud = res.metal_hud != 0;
-    launcher_settings.fps_choice = res.fps_choice as usize;
-    launcher_settings.touch_scale = res.touch_scale as usize;
     launcher_settings.save();
 
     for _ in 0..8 {

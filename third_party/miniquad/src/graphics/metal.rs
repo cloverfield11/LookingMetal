@@ -198,7 +198,7 @@ fn roundup_ub_buffer(current_buffer: u64) -> u64 {
 // it postpone reading the CPU memory until drawcall will actually happen.
 // There is no way to flush the buffer and makes metal's "update" function to update GPU memory right away.
 // Thus miniquad keeps a lot of buffer's copies...
-const BUFFERS_IN_ROTATION: usize = 30;
+const BUFFERS_IN_ROTATION: usize = 60;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Buffer {
@@ -580,6 +580,13 @@ impl RenderingBackend for MetalContext {
         self.close_lingering();
         unsafe {
             if self.command_buffer.is_none() {
+                #[cfg(target_os = "ios")]
+                {
+                    extern "C" {
+                        fn AliceMetalSync_Wait();
+                    }
+                    AliceMetalSync_Wait();
+                }
                 self.command_buffer = Some(msg_send![self.command_queue, commandBuffer]);
             }
             let command_buffer = self.command_buffer.unwrap();
@@ -1179,11 +1186,11 @@ impl RenderingBackend for MetalContext {
                                    setVertexBuffer:buffer.raw[buffer.value]
                                    offset:0
                                    atIndex:(index + 1) as u64];
-                buffer.next_value = buffer.value + 1;
+                buffer.next_value = (buffer.value + 1) % BUFFERS_IN_ROTATION;
             }
             let index_buffer = &mut self.buffers[index_buffer.0];
             self.index_buffer = Some(index_buffer.raw[index_buffer.value]);
-            index_buffer.next_value = index_buffer.value + 1;
+            index_buffer.next_value = (index_buffer.value + 1) % BUFFERS_IN_ROTATION;
 
             let img_count = textures.len();
             if img_count > 0 {
@@ -1256,6 +1263,13 @@ impl RenderingBackend for MetalContext {
         self.close_lingering();
         unsafe {
             if self.command_buffer.is_none() {
+                #[cfg(target_os = "ios")]
+                {
+                    extern "C" {
+                        fn AliceMetalSync_Wait();
+                    }
+                    AliceMetalSync_Wait();
+                }
                 self.command_buffer = Some(msg_send![self.command_queue, commandBuffer]);
             }
 
@@ -1422,9 +1436,22 @@ impl RenderingBackend for MetalContext {
 
             //msg_send_![drawable, retain];
             msg_send_![self.command_buffer.unwrap(), presentDrawable: drawable];
-            msg_send_![self.command_buffer.unwrap(), commit];
-            msg_send_![self.command_buffer.unwrap(), waitUntilCompleted];
+
+            #[cfg(target_os = "ios")]
+            {
+                extern "C" {
+                    fn AliceMetalSync_SignalOnComplete(command_buffer: *mut std::ffi::c_void);
+                }
+                AliceMetalSync_SignalOnComplete(self.command_buffer.unwrap() as *mut _);
+                msg_send_![self.command_buffer.unwrap(), commit];
+            }
+            #[cfg(not(target_os = "ios"))]
+            {
+                msg_send_![self.command_buffer.unwrap(), commit];
+                msg_send_![self.command_buffer.unwrap(), waitUntilCompleted];
+            }
         }
+        #[cfg(not(target_os = "ios"))]
         for buffer in &mut self.buffers {
             buffer.next_value = 0;
         }

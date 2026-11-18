@@ -522,8 +522,8 @@ unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, high_dpi: b
     };
     msg_send_![mtk_view_obj, setContentScaleFactor: scale];
 
-    msg_send_![mtk_view_obj, setEnableSetNeedsDisplay: YES];
-    msg_send_![mtk_view_obj, setPaused: YES];
+    msg_send_![mtk_view_obj, setEnableSetNeedsDisplay: NO];
+    msg_send_![mtk_view_obj, setPaused: NO];
     msg_send_![mtk_view_obj, setPreferredFramesPerSecond:120];
     msg_send_![mtk_view_obj, setDelegate: mtk_view_dlg_obj];
 
@@ -744,12 +744,13 @@ pub fn define_app_delegate() -> *const Class {
                                 }
                             }
                             AppleGfxApi::Metal => {
-                                msg_send_![&*view, performSelectorOnMainThread:sel!(setNeedsDisplay) withObject:nil waitUntilDone:NO];
+                                // MTKView is driven automatically by CADisplayLink when paused=NO.
+                                // Do not flood the main thread runloop with setNeedsDisplay.
                             }
                         }
                     }
 
-                    thread::yield_now();
+                    thread::sleep(std::time::Duration::from_millis(1));
                 }
             });
         }

@@ -62,10 +62,11 @@ impl Default for TouchGamepad {
 }
 
 impl TouchGamepad {
-    /// Fully adaptive scale factor proportional to the screen height.
-    /// Scaled comfortably for mobile touch gameplay without obscuring the screen.
+    /// Fully adaptive ergonomic scale factor proportional to the screen height.
+    /// Perfectly sized on any screen (iPhones with Retina 2x/3x, iPad Pro)
+    /// without obscuring the game scene.
     pub fn scale(&self, h: f32) -> f32 {
-        (h / 780.0) * self.scale_mult
+        (h / 520.0).clamp(1.5, 2.75)
     }
 
     pub fn update(&mut self) {

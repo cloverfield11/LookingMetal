@@ -1,5 +1,6 @@
 #import "AliceNativeMenu.h"
 #import <QuartzCore/QuartzCore.h>
+#import <Metal/Metal.h>
 
 // Forward declarations from miniquad
 extern void* miniquad_ios_root_view_controller(void) __attribute__((weak));
@@ -40,8 +41,6 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 @property (nonatomic, assign) float lookSens;
 @property (nonatomic, assign) BOOL invertY;
 @property (nonatomic, assign) BOOL metalHUD;
-@property (nonatomic, assign) int fpsChoice;
-@property (nonatomic, assign) int touchScale;
 
 @property (nonatomic, strong) UIImpactFeedbackGenerator *haptic;
 @end
@@ -590,92 +589,7 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     [scroll addSubview:hudRow];
     y += hudRowH;
 
-    // 7. FPS Lock (30 / 60 / 120)
-    CGFloat fpsRowH = 54.0;
-    UIView *fpsRow = [[UIView alloc] initWithFrame:CGRectMake(0, y, size.width, fpsRowH)];
-    UILabel *fl = [[UILabel alloc] initWithFrame:CGRectMake(4, 2, size.width * 0.44, 22)];
-    fl.text = @"⚡ Ограничение FPS (Lock)";
-    fl.textColor = [UIColor colorWithRed:1.0 green:0.85 blue:0.40 alpha:1.0];
-    fl.font = [UIFont systemFontOfSize:13.5 weight:UIFontWeightMedium];
-    [fpsRow addSubview:fl];
-
-    UILabel *subFl = [[UILabel alloc] initWithFrame:CGRectMake(4, 24, size.width * 0.44, 18)];
-    subFl.text = @"30 (Эко) · 60 (Стабильно) · 120 (ProMotion)";
-    subFl.textColor = [UIColor colorWithWhite:0.65 alpha:1.0];
-    subFl.font = [UIFont systemFontOfSize:10.5 weight:UIFontWeightRegular];
-    [fpsRow addSubview:subFl];
-
-    NSArray *fpsItems = @[@"30 FPS", @"60 FPS", @"120 FPS"];
-    UISegmentedControl *fpsSeg = [[UISegmentedControl alloc] initWithItems:fpsItems];
-    fpsSeg.frame = CGRectMake(size.width * 0.44 + 8, 8, size.width * 0.56 - 12, 32.0);
-    int selectedFpsIdx = 1; // Default 60 FPS
-    if (self.fpsChoice == 0) selectedFpsIdx = 0;
-    else if (self.fpsChoice == 2) selectedFpsIdx = 2;
-    else selectedFpsIdx = 1;
-    fpsSeg.selectedSegmentIndex = selectedFpsIdx;
-    [fpsSeg addTarget:self action:@selector(onFPSChange:) forControlEvents:UIControlEventValueChanged];
-    [fpsRow addSubview:fpsSeg];
-    [scroll addSubview:fpsRow];
-    y += fpsRowH;
-
-    // 8. Touch Controls Size (Размер экранных кнопок)
-    CGFloat touchRowH = 54.0;
-    UIView *touchRow = [[UIView alloc] initWithFrame:CGRectMake(0, y, size.width, touchRowH)];
-    UILabel *touchL = [[UILabel alloc] initWithFrame:CGRectMake(4, 2, size.width * 0.44, 22)];
-    touchL.text = @"🎮 Размер экранных кнопок";
-    touchL.textColor = [UIColor whiteColor];
-    touchL.font = [UIFont systemFontOfSize:13.5 weight:UIFontWeightMedium];
-    [touchRow addSubview:touchL];
-
-    UILabel *subTouchL = [[UILabel alloc] initWithFrame:CGRectMake(4, 24, size.width * 0.44, 18)];
-    subTouchL.text = @"Компактные · Стандартные · Крупные";
-    subTouchL.textColor = [UIColor colorWithWhite:0.65 alpha:1.0];
-    subTouchL.font = [UIFont systemFontOfSize:10.5 weight:UIFontWeightRegular];
-    [touchRow addSubview:subTouchL];
-
-    NSArray *touchItems = @[@"Мини", @"Норм", @"Макси"];
-    UISegmentedControl *touchSeg = [[UISegmentedControl alloc] initWithItems:touchItems];
-    touchSeg.frame = CGRectMake(size.width * 0.44 + 8, 8, size.width * 0.56 - 12, 32.0);
-    int selectedTouchIdx = 0;
-    if (self.touchScale == 1) selectedTouchIdx = 0; // Mini
-    else if (self.touchScale == 2) selectedTouchIdx = 2; // Maxi
-    else selectedTouchIdx = 1; // Norm
-    touchSeg.selectedSegmentIndex = selectedTouchIdx;
-    [touchSeg addTarget:self action:@selector(onTouchScaleChange:) forControlEvents:UIControlEventValueChanged];
-    [touchRow addSubview:touchSeg];
-    [scroll addSubview:touchRow];
-    y += touchRowH;
-
     scroll.contentSize = CGSizeMake(size.width, y + 16.0);
-}
-
-- (void)onFPSChange:(UISegmentedControl *)seg {
-    [self.haptic impactOccurred];
-    int fps = 60;
-    if (seg.selectedSegmentIndex == 0) {
-        fps = 30;
-        self.fpsChoice = 0;
-    } else if (seg.selectedSegmentIndex == 2) {
-        fps = 120;
-        self.fpsChoice = 2;
-    } else {
-        fps = 60;
-        self.fpsChoice = 1;
-    }
-    s_result.fps_choice = self.fpsChoice;
-    AliceApplyFPSLimit(fps);
-}
-
-- (void)onTouchScaleChange:(UISegmentedControl *)seg {
-    [self.haptic impactOccurred];
-    if (seg.selectedSegmentIndex == 0) {
-        self.touchScale = 1; // Mini
-    } else if (seg.selectedSegmentIndex == 2) {
-        self.touchScale = 2; // Maxi
-    } else {
-        self.touchScale = 0; // Norm
-    }
-    s_result.touch_scale = self.touchScale;
 }
 
 - (void)addSliderTo:(UIView *)parent y:(CGFloat)y label:(NSString *)label val:(float)val min:(float)min max:(float)max tag:(NSInteger)tag action:(SEL)act {
@@ -1126,8 +1040,7 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
                           const AliceSaveSlotInfo* slots, int slot_count,
                           const AliceChapterInfo* chapters, int chapter_count,
                           float sound_vol, float music_vol, float voice_vol,
-                          float look_sens, int invert_y, int metal_hud,
-                          int fps_choice, int touch_scale) {
+                          float look_sens, int invert_y, int metal_hud) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (s_active_menu_view) {
             [s_active_menu_view removeFromSuperview];
@@ -1147,8 +1060,6 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
         s_result.look_sens = look_sens;
         s_result.invert_y = invert_y;
         s_result.metal_hud = metal_hud;
-        s_result.fps_choice = fps_choice;
-        s_result.touch_scale = touch_scale;
         s_has_action = 0;
 
         AliceNativeMenuView *menu = [[AliceNativeMenuView alloc] initWithFrame:rootVC.view.bounds];
@@ -1158,8 +1069,6 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
         menu.voiceVol = voice_vol;
         menu.lookSens = look_sens;
         menu.invertY = (invert_y != 0);
-        menu.fpsChoice = fps_choice;
-        menu.touchScale = touch_scale;
         BOOL hudSaved = [[NSUserDefaults standardUserDefaults] boolForKey:@"MetalHUDEnabled"];
         menu.metalHUD = hudSaved || (metal_hud != 0);
 
@@ -1227,4 +1136,31 @@ void AliceNativeMenu_Dismiss(void) {
             [(AliceNativeMenuView *)s_active_menu_view dismissWithAnimation];
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+// Metal CPU-GPU In-flight Frame Synchronization (Triple Buffering)
+// Allows CPU to encode next frame while GPU renders current frame smoothly.
+// ---------------------------------------------------------------------------
+static dispatch_semaphore_t s_metal_sync_semaphore = NULL;
+
+void AliceMetalSync_Wait(void) {
+    if (!s_metal_sync_semaphore) {
+        // 3 permits for standard Apple Metal triple buffering
+        s_metal_sync_semaphore = dispatch_semaphore_create(3);
+    }
+    dispatch_semaphore_wait(s_metal_sync_semaphore, DISPATCH_TIME_FOREVER);
+}
+
+void AliceMetalSync_SignalOnComplete(void* commandBufferPtr) {
+    if (!commandBufferPtr) return;
+    if (!s_metal_sync_semaphore) {
+        s_metal_sync_semaphore = dispatch_semaphore_create(3);
+    }
+    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)commandBufferPtr;
+    dispatch_semaphore_t sema = s_metal_sync_semaphore;
+    [cb addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull buffer) {
+        (void)buffer;
+        dispatch_semaphore_signal(sema);
+    }];
 }

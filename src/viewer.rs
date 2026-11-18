@@ -577,12 +577,7 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
         macroquad::input::simulate_mouse_with_touch(false);
         #[cfg(target_os = "ios")]
         {
-            let fps = match launcher_settings.fps_choice {
-                0 => 30,
-                2 => 120,
-                _ => 60,
-            };
-            macroquad::miniquad::native::ios::set_preferred_frames_per_second(fps);
+            macroquad::miniquad::native::ios::set_preferred_frames_per_second(120);
         }
     }
 
@@ -774,11 +769,6 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
     let mut chapter_requested = None;
     let mut mouse_look = MouseLook::default();
     let mut touch_pad = crate::touch_gamepad::TouchGamepad::default();
-    touch_pad.scale_mult = match launcher_settings.touch_scale {
-        1 => 0.85,
-        2 => 1.20,
-        _ => 1.0,
-    };
     if launcher_settings.gamepad_style == 1 {
         touch_pad.enabled = false;
     }
