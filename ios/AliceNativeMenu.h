@@ -63,10 +63,6 @@ void AlicePreMetalInit(void);
 void AliceApplyMetalHUD(void* mtkViewPtr);
 void AliceOnFrameDrawable(void* drawablePtr);
 
-// Metal CPU-GPU triple buffering frame synchronization
-void AliceMetalSync_Wait(void);
-void AliceMetalSync_SignalOnComplete(void* commandBufferPtr);
-
 #ifdef __cplusplus
 }
 #endif

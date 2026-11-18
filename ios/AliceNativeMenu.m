@@ -1137,30 +1137,3 @@ void AliceNativeMenu_Dismiss(void) {
         }
     });
 }
-
-// ---------------------------------------------------------------------------
-// Metal CPU-GPU In-flight Frame Synchronization (Triple Buffering)
-// Allows CPU to encode next frame while GPU renders current frame smoothly.
-// ---------------------------------------------------------------------------
-static dispatch_semaphore_t s_metal_sync_semaphore = NULL;
-
-void AliceMetalSync_Wait(void) {
-    if (!s_metal_sync_semaphore) {
-        // 3 permits for standard Apple Metal triple buffering
-        s_metal_sync_semaphore = dispatch_semaphore_create(3);
-    }
-    dispatch_semaphore_wait(s_metal_sync_semaphore, DISPATCH_TIME_FOREVER);
-}
-
-void AliceMetalSync_SignalOnComplete(void* commandBufferPtr) {
-    if (!commandBufferPtr) return;
-    if (!s_metal_sync_semaphore) {
-        s_metal_sync_semaphore = dispatch_semaphore_create(3);
-    }
-    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)commandBufferPtr;
-    dispatch_semaphore_t sema = s_metal_sync_semaphore;
-    [cb addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull buffer) {
-        (void)buffer;
-        dispatch_semaphore_signal(sema);
-    }];
-}

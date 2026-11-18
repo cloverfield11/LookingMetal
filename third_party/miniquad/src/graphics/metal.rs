@@ -198,7 +198,7 @@ fn roundup_ub_buffer(current_buffer: u64) -> u64 {
 // it postpone reading the CPU memory until drawcall will actually happen.
 // There is no way to flush the buffer and makes metal's "update" function to update GPU memory right away.
 // Thus miniquad keeps a lot of buffer's copies...
-const BUFFERS_IN_ROTATION: usize = 60;
+const BUFFERS_IN_ROTATION: usize = 16;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Buffer {
@@ -580,13 +580,6 @@ impl RenderingBackend for MetalContext {
         self.close_lingering();
         unsafe {
             if self.command_buffer.is_none() {
-                #[cfg(target_os = "ios")]
-                {
-                    extern "C" {
-                        fn AliceMetalSync_Wait();
-                    }
-                    AliceMetalSync_Wait();
-                }
                 self.command_buffer = Some(msg_send![self.command_queue, commandBuffer]);
             }
             let command_buffer = self.command_buffer.unwrap();
@@ -717,9 +710,6 @@ impl RenderingBackend for MetalContext {
                 }
             };
 
-            unsafe {
-                msg_send_![buffer, retain];
-            }
             raw[i] = buffer;
         }
         let buffer = Buffer {
@@ -1263,13 +1253,6 @@ impl RenderingBackend for MetalContext {
         self.close_lingering();
         unsafe {
             if self.command_buffer.is_none() {
-                #[cfg(target_os = "ios")]
-                {
-                    extern "C" {
-                        fn AliceMetalSync_Wait();
-                    }
-                    AliceMetalSync_Wait();
-                }
                 self.command_buffer = Some(msg_send![self.command_queue, commandBuffer]);
             }
 
@@ -1436,22 +1419,9 @@ impl RenderingBackend for MetalContext {
 
             //msg_send_![drawable, retain];
             msg_send_![self.command_buffer.unwrap(), presentDrawable: drawable];
-
-            #[cfg(target_os = "ios")]
-            {
-                extern "C" {
-                    fn AliceMetalSync_SignalOnComplete(command_buffer: *mut std::ffi::c_void);
-                }
-                AliceMetalSync_SignalOnComplete(self.command_buffer.unwrap() as *mut _);
-                msg_send_![self.command_buffer.unwrap(), commit];
-            }
-            #[cfg(not(target_os = "ios"))]
-            {
-                msg_send_![self.command_buffer.unwrap(), commit];
-                msg_send_![self.command_buffer.unwrap(), waitUntilCompleted];
-            }
+            msg_send_![self.command_buffer.unwrap(), commit];
+            msg_send_![self.command_buffer.unwrap(), waitUntilCompleted];
         }
-        #[cfg(not(target_os = "ios"))]
         for buffer in &mut self.buffers {
             buffer.next_value = 0;
         }
