@@ -63,6 +63,11 @@ void AlicePreMetalInit(void);
 void AliceApplyMetalHUD(void* mtkViewPtr);
 void AliceOnFrameDrawable(void* drawablePtr);
 float AliceGetRenderScale(void);
+void AliceInitLogging(void);
+void AliceWriteCrashLog(const char* msg);
+void AliceFramePacing_Wait(void);
+void AliceFramePacing_Signal(void);
+void AliceFramePacing_SignalOnComplete(void* commandBufferPtr);
 
 #ifdef __cplusplus
 }

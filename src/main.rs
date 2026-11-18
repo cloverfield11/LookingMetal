@@ -173,6 +173,45 @@ pub struct Options {
 pub static NvOptimusEnablement: u32 = 1;
 
 fn main() {
+    #[cfg(target_os = "ios")]
+    {
+        extern "C" {
+            fn AliceInitLogging();
+        }
+        unsafe {
+            AliceInitLogging();
+        }
+    }
+
+    std::panic::set_hook(Box::new(|panic_info| {
+        let location = panic_info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown".into());
+        let payload = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            *s
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.as_str()
+        } else {
+            "unknown payload"
+        };
+        eprintln!("\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        eprintln!("[LookingMetal] RUST PANIC at {location}");
+        eprintln!("[LookingMetal] Message: {payload}");
+        eprintln!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+
+        #[cfg(target_os = "ios")]
+        {
+            extern "C" {
+                fn AliceWriteCrashLog(msg: *const std::os::raw::c_char);
+            }
+            let s = std::ffi::CString::new(format!("RUST PANIC at {location}: {payload}")).unwrap_or_default();
+            unsafe {
+                AliceWriteCrashLog(s.as_ptr());
+            }
+        }
+    }));
+
     if let Err(error) = run() {
         eprintln!("Looking Glass: {error:#}");
         std::process::exit(1);

@@ -1283,7 +1283,10 @@ impl RenderingBackend for MetalContext {
                     )
                 }
             };
-            assert!(!descriptor.is_null());
+            if descriptor.is_null() {
+                eprintln!("[LookingMetal] currentRenderPassDescriptor is null, skipping frame pass");
+                return;
+            }
 
             let color_attachments = msg_send_![descriptor, colorAttachments];
             let color_attachment = msg_send_![color_attachments, objectAtIndexedSubscript: 0];
@@ -1421,12 +1424,26 @@ impl RenderingBackend for MetalContext {
                 if !drawable.is_null() {
                     msg_send_![cmd_buf, presentDrawable: drawable];
                 }
+                #[cfg(target_os = "ios")]
+                {
+                    extern "C" {
+                        fn AliceFramePacing_SignalOnComplete(commandBuffer: *mut std::ffi::c_void);
+                    }
+                    AliceFramePacing_SignalOnComplete(cmd_buf as *mut _);
+                }
                 msg_send_![cmd_buf, commit];
                 #[cfg(not(target_os = "ios"))]
                 msg_send_![cmd_buf, waitUntilCompleted];
+            } else {
+                #[cfg(target_os = "ios")]
+                {
+                    extern "C" {
+                        fn AliceFramePacing_Signal();
+                    }
+                    AliceFramePacing_Signal();
+                }
             }
         }
-        #[cfg(not(target_os = "ios"))]
         for buffer in &mut self.buffers {
             buffer.next_value = 0;
         }

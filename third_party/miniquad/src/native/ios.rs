@@ -367,8 +367,18 @@ pub fn define_glk_or_mtk_view_dlg(superclass: &Class) -> *const Class {
         }
 
         if let Some(ref mut event_handler) = payload.event_handler {
-            event_handler.update();
-            event_handler.draw();
+            let paused = payload.state.lock().unwrap().paused;
+            if !paused {
+                extern "C" {
+                    fn AliceFramePacing_Wait();
+                }
+                unsafe {
+                    AliceFramePacing_Wait();
+                }
+
+                event_handler.update();
+                event_handler.draw();
+            }
             let mut s = payload.state.lock().unwrap();
             s.update_requested = false;
         }

@@ -1,6 +1,8 @@
 #import "AliceNativeMenu.h"
 #import <QuartzCore/QuartzCore.h>
 #import <Metal/Metal.h>
+#import <execinfo.h>
+#import <signal.h>
 
 // Forward declarations from miniquad
 extern void* miniquad_ios_root_view_controller(void) __attribute__((weak));
@@ -10,6 +12,10 @@ extern void miniquad_ios_set_preferred_fps(int fps) __attribute__((weak));
 static AliceMenuResult s_result = {0};
 static int s_has_action = 0;
 static UIView *s_active_menu_view = nil;
+
+static NSString *AliceGetLogFilePath(void);
+static NSString *AliceGetCrashFilePath(void);
+static UIViewController* AliceGetRootViewController(void* hint);
 
 typedef NS_ENUM(NSInteger, MenuPage) {
     MenuPageMain = 0,
@@ -589,7 +595,61 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     [scroll addSubview:hudRow];
     y += hudRowH;
 
+    // 7. View Game Logs Button
+    CGFloat logRowH = 46.0;
+    UIButton *logBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    logBtn.frame = CGRectMake(0, y + 4, size.width, 38.0);
+    logBtn.layer.cornerRadius = 10.0;
+    if (@available(iOS 13.0, *)) {
+        logBtn.layer.cornerCurve = kCACornerCurveContinuous;
+    }
+    logBtn.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.12];
+    logBtn.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.20].CGColor;
+    logBtn.layer.borderWidth = 1.0;
+    [logBtn setTitle:@"📄 View Logs & Crash Reports" forState:UIControlStateNormal];
+    [logBtn setTitleColor:[UIColor colorWithRed:0.95 green:0.85 blue:0.65 alpha:1.0] forState:UIControlStateNormal];
+    logBtn.titleLabel.font = [UIFont systemFontOfSize:13.5 weight:UIFontWeightMedium];
+    [logBtn addTarget:self action:@selector(onViewLogTap:) forControlEvents:UIControlEventTouchUpInside];
+    [scroll addSubview:logBtn];
+    y += logRowH;
+
     scroll.contentSize = CGSizeMake(size.width, y + 16.0);
+}
+
+- (void)onViewLogTap:(UIButton *)btn {
+    [self.haptic impactOccurred];
+    NSString *logPath = AliceGetLogFilePath();
+    NSString *crashPath = AliceGetCrashFilePath();
+
+    NSMutableString *content = [NSMutableString string];
+    if ([[NSFileManager defaultManager] fileExistsAtPath:crashPath]) {
+        NSString *crash = [NSString stringWithContentsOfFile:crashPath encoding:NSUTF8StringEncoding error:nil];
+        if (crash.length > 0) {
+            [content appendFormat:@"--- LAST CRASH REPORT ---\n%@\n\n", crash];
+        }
+    }
+
+    NSString *log = [NSString stringWithContentsOfFile:logPath encoding:NSUTF8StringEncoding error:nil];
+    if (log && log.length > 0) {
+        NSArray *lines = [log componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+        NSUInteger start = lines.count > 50 ? lines.count - 50 : 0;
+        NSArray *recent = [lines subarrayWithRange:NSMakeRange(start, lines.count - start)];
+        [content appendFormat:@"--- RECENT LOG (Last %lu lines) ---\n%@\n", (unsigned long)recent.count, [recent componentsJoinedByString:@"\n"]];
+    } else {
+        [content appendString:@"Log is currently empty or session just started."];
+    }
+
+    UIViewController *rootVC = AliceGetRootViewController(NULL);
+    if (!rootVC) return;
+
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"LookingMetal Log"
+                                                                   message:content
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Copy to Clipboard" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
+        [UIPasteboard generalPasteboard].string = content;
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Close" style:UIAlertActionStyleCancel handler:nil]];
+    [rootVC presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)addSliderTo:(UIView *)parent y:(CGFloat)y label:(NSString *)label val:(float)val min:(float)min max:(float)max tag:(NSInteger)tag action:(SEL)act {
@@ -727,7 +787,194 @@ static CAMetalLayer* AliceFindMetalLayer(UIView *v) {
     return nil;
 }
 
+static NSString *AliceGetLogFilePath(void) {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *docs = paths.firstObject ?: NSTemporaryDirectory();
+    return [docs stringByAppendingPathComponent:@"LookingMetal.log"];
+}
+
+static NSString *AliceGetCrashFilePath(void) {
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    NSString *docs = paths.firstObject ?: NSTemporaryDirectory();
+    return [docs stringByAppendingPathComponent:@"LookingMetal_crash.log"];
+}
+
+void AliceWriteCrashLog(const char* msg) {
+    if (!msg) return;
+    NSString *crashPath = AliceGetCrashFilePath();
+    FILE *f = fopen([crashPath UTF8String], "a");
+    if (!f) return;
+    NSDateFormatter *df = [[NSDateFormatter alloc] init];
+    df.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS";
+    NSString *ts = [df stringFromDate:[NSDate date]];
+    fprintf(f, "[%s] %s\n", [ts UTF8String], msg);
+    fflush(f);
+    fclose(f);
+}
+
+static void alice_fatal_signal_handler(int sig, siginfo_t *info, void *context) {
+    NSString *crashPath = AliceGetCrashFilePath();
+    FILE *f = fopen([crashPath UTF8String], "a");
+    if (!f) f = stderr;
+
+    const char *sigName = "UNKNOWN";
+    switch (sig) {
+        case SIGSEGV: sigName = "SIGSEGV (Segmentation Fault - Invalid Memory Access)"; break;
+        case SIGBUS:  sigName = "SIGBUS (Bus Error - Alignment / Unmapped Memory)"; break;
+        case SIGABRT: sigName = "SIGABRT (Abort / Assertion Failure)"; break;
+        case SIGILL:  sigName = "SIGILL (Illegal Instruction)"; break;
+        case SIGFPE:  sigName = "SIGFPE (Floating Point Exception)"; break;
+        case SIGTRAP: sigName = "SIGTRAP (Trace/Breakpoint Trap)"; break;
+    }
+
+    NSDateFormatter *df = [[NSDateFormatter alloc] init];
+    df.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS";
+    NSString *ts = [df stringFromDate:[NSDate date]];
+
+    fprintf(f, "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    fprintf(f, "CRASH DETECTED at %s\n", [ts UTF8String]);
+    fprintf(f, "Signal: %d [%s]\n", sig, sigName);
+    if (info) {
+        fprintf(f, "Fault Address: %p, Signal Code: %d\n", info->si_addr, info->si_code);
+    }
+
+    void *callstack[128];
+    int frames = backtrace(callstack, 128);
+    char **strs = backtrace_symbols(callstack, frames);
+    fprintf(f, "\nCall Stack (%d frames):\n", frames);
+    if (strs) {
+        for (int i = 0; i < frames; ++i) {
+            fprintf(f, "  #%02d %s\n", i, strs[i]);
+        }
+        free(strs);
+    }
+    fprintf(f, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n");
+    fflush(f);
+    if (f != stderr) fclose(f);
+
+    fprintf(stderr, "\n[LookingMetal] FATAL SIGNAL: %d [%s] at %p\n", sig, sigName, info ? info->si_addr : NULL);
+    fflush(stderr);
+
+    signal(sig, SIG_DFL);
+    raise(sig);
+}
+
+static void alice_uncaught_exception_handler(NSException *exception) {
+    NSString *crashPath = AliceGetCrashFilePath();
+    FILE *f = fopen([crashPath UTF8String], "a");
+    if (!f) f = stderr;
+
+    NSDateFormatter *df = [[NSDateFormatter alloc] init];
+    df.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS";
+    NSString *ts = [df stringFromDate:[NSDate date]];
+
+    fprintf(f, "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+    fprintf(f, "UNCAUGHT OBJC EXCEPTION at %s\n", [ts UTF8String]);
+    fprintf(f, "Name: %s\n", [[exception name] UTF8String]);
+    fprintf(f, "Reason: %s\n", [[exception reason] UTF8String]);
+    fprintf(f, "Call Stack:\n");
+    for (NSString *symbol in [exception callStackSymbols]) {
+        fprintf(f, "  %s\n", [symbol UTF8String]);
+    }
+    fprintf(f, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n");
+    fflush(f);
+    if (f != stderr) fclose(f);
+
+    fprintf(stderr, "[LookingMetal] UNCAUGHT EXCEPTION: %s (%s)\n", [[exception name] UTF8String], [[exception reason] UTF8String]);
+    fflush(stderr);
+}
+
+void AliceInitLogging(void) {
+    static int s_logging_initialized = 0;
+    if (s_logging_initialized) return;
+    s_logging_initialized = 1;
+
+    NSString *logPath = AliceGetLogFilePath();
+
+    // Rotate log if > 8MB
+    NSFileManager *fm = [NSFileManager defaultManager];
+    NSDictionary *attrs = [fm attributesOfItemAtPath:logPath error:nil];
+    if (attrs && [attrs fileSize] > 8 * 1024 * 1024) {
+        NSString *oldPath = [logPath stringByAppendingPathExtension:@"old"];
+        [fm removeItemAtPath:oldPath error:nil];
+        [fm moveItemAtPath:logPath toPath:oldPath error:nil];
+    }
+
+    FILE *fOut = freopen([logPath UTF8String], "a+", stdout);
+    if (fOut) {
+        setvbuf(stdout, NULL, _IOLBF, 1024);
+    }
+    FILE *fErr = freopen([logPath UTF8String], "a+", stderr);
+    if (fErr) {
+        setvbuf(stderr, NULL, _IONBF, 0);
+    }
+
+    NSDateFormatter *df = [[NSDateFormatter alloc] init];
+    df.dateFormat = @"yyyy-MM-dd HH:mm:ss.SSS";
+    NSString *ts = [df stringFromDate:[NSDate date]];
+
+    printf("\n=======================================================\n");
+    printf("[LookingMetal] Session Started at %s\n", [ts UTF8String]);
+    printf("[LookingMetal] System: iOS %s (%s)\n",
+           [[[UIDevice currentDevice] systemVersion] UTF8String],
+           [[[UIDevice currentDevice] model] UTF8String]);
+    printf("[LookingMetal] Log File: %s\n", [logPath UTF8String]);
+    printf("=======================================================\n");
+    fflush(stdout);
+
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_sigaction = alice_fatal_signal_handler;
+    sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
+    sigemptyset(&sa.sa_mask);
+
+    sigaction(SIGSEGV, &sa, NULL);
+    sigaction(SIGBUS,  &sa, NULL);
+    sigaction(SIGABRT, &sa, NULL);
+    sigaction(SIGILL,  &sa, NULL);
+    sigaction(SIGFPE,  &sa, NULL);
+    sigaction(SIGTRAP, &sa, NULL);
+
+    NSSetUncaughtExceptionHandler(&alice_uncaught_exception_handler);
+}
+
+// ---------------------------------------------------------------------------
+// Metal Triple-Buffering Frame Pacing
+// ---------------------------------------------------------------------------
+static dispatch_semaphore_t s_frame_pacing_semaphore = NULL;
+
+void AliceFramePacing_Wait(void) {
+    if (!s_frame_pacing_semaphore) {
+        s_frame_pacing_semaphore = dispatch_semaphore_create(3);
+    }
+    // 500ms safety timeout: guarantees no deadlock under any circumstance
+    dispatch_semaphore_wait(s_frame_pacing_semaphore, dispatch_time(DISPATCH_TIME_NOW, 500 * NSEC_PER_MSEC));
+}
+
+void AliceFramePacing_Signal(void) {
+    if (s_frame_pacing_semaphore) {
+        dispatch_semaphore_signal(s_frame_pacing_semaphore);
+    }
+}
+
+void AliceFramePacing_SignalOnComplete(void* commandBufferPtr) {
+    if (!commandBufferPtr) {
+        AliceFramePacing_Signal();
+        return;
+    }
+    if (!s_frame_pacing_semaphore) {
+        s_frame_pacing_semaphore = dispatch_semaphore_create(3);
+    }
+    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)commandBufferPtr;
+    dispatch_semaphore_t sema = s_frame_pacing_semaphore;
+    [cb addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull buffer) {
+        (void)buffer;
+        dispatch_semaphore_signal(sema);
+    }];
+}
+
 __attribute__((constructor)) static void alice_hud_prelaunch(void) {
+    AliceInitLogging();
     if (AliceIsMetalHUDRequested()) {
         setenv("MTL_HUD_ENABLED", "1", 1);
         setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
