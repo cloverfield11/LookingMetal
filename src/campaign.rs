@@ -316,7 +316,7 @@ pub fn arrive(
     leaving: Level,
     exit: &Exit,
     strict: bool,
-) -> Result<NextVisit> {
+) -> Result<Box<NextVisit>> {
     let (name, entry) = (exit.0.as_str(), exit.1.as_deref());
     let key = save::visit_key(name, entry);
     let cached = ledger.levels.get(&key).cloned();
@@ -330,7 +330,7 @@ pub fn arrive(
     } else {
         stats.ensure_level_weapons(name, entry);
     }
-    Ok(NextVisit {
+    Ok(Box::new(NextVisit {
         map: name.into(),
         entry: entry.map(str::to_owned),
         cached,
@@ -338,7 +338,7 @@ pub fn arrive(
         player,
         eye,
         yaw,
-    })
+    }))
 }
 
 pub fn check(assets: &mut Assets) -> Result<()> {

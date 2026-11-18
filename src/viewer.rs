@@ -39,13 +39,13 @@ fn load_scene(
     Scene::load_for(assets, name, difficulty)
 }
 struct Entered {
-    art: LevelArt,
-    scene: Scene,
-    interactions: Interactions,
-    story: crate::story::Story,
-    hints: crate::cheshire::Hints,
-    npcs: crate::npc::Npcs,
-    steam: crate::particles::Steam,
+    art: Box<LevelArt>,
+    scene: Box<Scene>,
+    interactions: Box<Interactions>,
+    story: Box<crate::story::Story>,
+    hints: Box<crate::cheshire::Hints>,
+    npcs: Box<crate::npc::Npcs>,
+    steam: Box<crate::particles::Steam>,
     environment_clock: f32,
     pickup_clock: f32,
 }
@@ -268,7 +268,7 @@ fn enter_level(
     cached: Option<&Level>,
     options: &Options,
     play_entry: bool,
-) -> Result<Entered> {
+) -> Result<Box<Entered>> {
     let loaded =
         crate::campaign::load_visit(assets, name, entry, cached, options.difficulty, play_entry)?;
     finish_entered(assets, loaded, name, entry, cached, options)
@@ -282,7 +282,7 @@ fn finish_entered(
     entry: Option<&str>,
     cached: Option<&Level>,
     options: &Options,
-) -> Result<Entered> {
+) -> Result<Box<Entered>> {
     let crate::campaign::Loaded {
         map,
         world,
@@ -290,40 +290,40 @@ fn finish_entered(
         story,
         hints,
     } = loaded;
-    let scene = Scene::from_parts(assets, name, map, world)?;
+    let scene = Box::new(Scene::from_parts(assets, name, map, world)?);
     if options.npc_preview || options.combat_preview || options.larva_preview {
         interactions.encounters = None;
     }
-    let mut npcs = crate::npc::Npcs::load(
+    let mut npcs = Box::new(crate::npc::Npcs::load(
         assets,
         &scene.map,
         name,
         entry,
         options.npc_preview,
         options.combat_preview,
-    )?;
+    )?);
     if options.larva_preview && name == "centipede1" {
-        npcs = crate::npc::Npcs::larva_preview(assets)?;
+        npcs = Box::new(crate::npc::Npcs::larva_preview(assets)?);
     }
     if let Some(saved) = cached {
         npcs.restore(&saved.npcs)?;
     }
-    let steam = crate::particles::Steam::load(assets, &scene.map)?;
+    let steam = Box::new(crate::particles::Steam::load(assets, &scene.map)?);
     // Prepare the destination cast before replacing any live level state.
     // Tab, console maps and campaign exits must carry this exact scene/art pair.
-    let mut art = LevelArt::default();
+    let mut art = Box::new(LevelArt::default());
     art.prepare(assets, &scene, &interactions, true)?;
-    Ok(Entered {
+    Ok(Box::new(Entered {
         art,
         scene,
-        interactions,
-        story,
-        hints,
+        interactions: Box::new(interactions),
+        story: Box::new(story),
+        hints: Box::new(hints),
         npcs,
         steam,
         environment_clock: cached.map_or(0., |s| s.environment_clock),
         pickup_clock: cached.map_or(0., |s| s.pickup_clock),
-    })
+    }))
 }
 
 pub(crate) fn save_capture(path: &std::path::Path) -> Result<()> {
@@ -620,14 +620,14 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
         .iter()
         .position(|m| m == &options.map)
         .context("Map not found")?;
-    let mut scene = load_scene(&mut assets, &maps[current], options.difficulty)?;
-    let mut level_art = LevelArt::default();
+    let mut scene = Box::new(load_scene(&mut assets, &maps[current], options.difficulty)?);
+    let mut level_art = Box::new(LevelArt::default());
     let mut skip_scene = crate::cinematic::Skip::default();
     let mut power_art = crate::powerups::Art::load(&mut assets)?;
-    let mut hints = crate::cheshire::Hints::load(&mut assets, &scene.map, &maps[current])?;
+    let mut hints = Box::new(crate::cheshire::Hints::load(&mut assets, &scene.map, &maps[current])?);
     let mut console = crate::console::Console::new();
-    let mut steam = crate::particles::Steam::load(&mut assets, &scene.map)?;
-    let mut interactions = Interactions::load(&scene.map)?;
+    let mut steam = Box::new(crate::particles::Steam::load(&mut assets, &scene.map)?);
+    let mut interactions = Box::new(Interactions::load(&scene.map)?);
     interactions.set_entry(
         &mut assets,
         &scene.map,
@@ -640,16 +640,16 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
     interactions.sync(&mut scene.world);
     save::validate_entry(&scene.map, options.entry.as_deref())?;
     let mut entry_spawn = options.entry.clone();
-    let mut npcs = crate::npc::Npcs::load(
+    let mut npcs = Box::new(crate::npc::Npcs::load(
         &mut assets,
         &scene.map,
         &maps[current],
         entry_spawn.as_deref(),
         options.npc_preview,
         options.combat_preview,
-    )?;
+    )?);
     if options.larva_preview && maps[current] == "centipede1" {
-        npcs = crate::npc::Npcs::larva_preview(&mut assets)?;
+        npcs = Box::new(crate::npc::Npcs::larva_preview(&mut assets)?);
     }
     let catalog = Catalog::load(&mut assets)?;
     let mut stats = starting_stats(&options, &maps[current], entry_spawn.as_deref());
@@ -674,7 +674,7 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
     let mut pickup_feedback = inventory::PickupFeedback::default();
     let mut environment_clock = 0.;
     audio.load(&mut assets, &maps[current], &scene.map);
-    let mut story = crate::story::Story::load(&mut assets, &maps[current]);
+    let mut story = Box::new(crate::story::Story::load(&mut assets, &maps[current]));
     if options.shelf_preview {
         anyhow::ensure!(maps[current] == "skool1", "--shelf-preview requires skool1");
         let mut staging = Player::spawn(&scene.world, scene.map.spawn().0)
@@ -815,13 +815,13 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
             retry.remember(r.game.clone());
             entry_spawn = level.entry;
             selected_entry = entry_spawn.clone();
-            scene = r.scene;
-            interactions = r.interactions;
-            story = r.story;
-            hints = r.hints;
-            npcs = r.npcs;
+            scene = Box::new(r.scene);
+            interactions = Box::new(r.interactions);
+            story = Box::new(r.story);
+            hints = Box::new(r.hints);
+            npcs = Box::new(r.npcs);
             alice = r.alice;
-            steam = r.steam;
+            steam = Box::new(r.steam);
             campaign = r.game.campaign;
             stats = r.game.stats;
             options.difficulty = stats.difficulty;
@@ -846,7 +846,7 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                 entry_spawn.as_deref(),
                 &catalog,
             );
-            level_art = LevelArt::default();
+            level_art = Box::new(LevelArt::default());
             level_art.prepare(&mut assets, &scene, &interactions, true)?;
             skip_scene = crate::cinematic::Skip::default();
             audio.load(&mut assets, &maps[current], &scene.map);
@@ -1753,7 +1753,7 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                 stats.restore();
                 npcs.reset_combat();
                 if options.larva_preview && maps[current] == "centipede1" {
-                    npcs = crate::npc::Npcs::larva_preview(&mut assets)?;
+                    npcs = Box::new(crate::npc::Npcs::larva_preview(&mut assets)?);
                     npcs.update(0., &scene.world, player.eye());
                     stats.loot.remove(&loot_visit);
                     let prefix = format!("drop:{loot_visit}:");
@@ -2400,7 +2400,7 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                     eye,
                     yaw,
                     ..
-                } = visit;
+                } = *visit;
                 let next = finish_entered(
                     &mut assets,
                     loaded,
