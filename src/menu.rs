@@ -12,7 +12,7 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use macroquad::prelude::*;
 use std::collections::BTreeMap;
-mod save_screen;
+pub(crate) mod save_screen;
 mod chapters;
 pub use chapters::ChapterChoice;
 

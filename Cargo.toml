@@ -43,6 +43,7 @@ miniquad = { path = "third_party/miniquad" }
 
 [build-dependencies]
 sha2 = "=0.10.9"
+cc = "=1.5.1"
 
 [profile.dev]
 opt-level = 1

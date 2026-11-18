@@ -407,6 +407,12 @@ struct View {
 // non-owning pointer lets the game switch between the supported display rates
 // after its own launcher has completed.
 static mut ACTIVE_MTK_VIEW: ObjcId = std::ptr::null_mut();
+static mut ACTIVE_VIEW_CONTROLLER: ObjcId = std::ptr::null_mut();
+
+#[no_mangle]
+pub extern "C" fn miniquad_ios_root_view_controller() -> *mut std::ffi::c_void {
+    unsafe { ACTIVE_VIEW_CONTROLLER as *mut _ }
+}
 
 /// Select an iOS display rate from the app thread. Unsupported rates are
 /// normalized to Apple's documented 30/60/120 values.
@@ -462,6 +468,7 @@ unsafe fn create_opengl_view(screen_rect: NSRect, _sample_count: i32, high_dpi: 
     let view_ctrl_obj: ObjcId = msg_send![view_ctrl_obj, init];
 
     msg_send_![view_ctrl_obj, setView: glk_view_obj];
+    ACTIVE_VIEW_CONTROLLER = view_ctrl_obj;
 
     View {
         view: glk_view_obj,
@@ -492,6 +499,7 @@ unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, _high_dpi: 
     msg_send_![mtk_view_obj, setUserInteractionEnabled: YES];
     msg_send_![mtk_view_obj, setMultipleTouchEnabled: YES];
     ACTIVE_MTK_VIEW = mtk_view_obj;
+    ACTIVE_VIEW_CONTROLLER = view_ctrl_obj;
 
     View {
         view: mtk_view_obj,

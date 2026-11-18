@@ -113,6 +113,8 @@ mod tan;
 mod targeting;
 mod texture;
 pub mod ios_controller;
+#[cfg(target_os = "ios")]
+pub mod ios_menu;
 pub mod launcher;
 pub mod touch_gamepad;
 mod traversal;

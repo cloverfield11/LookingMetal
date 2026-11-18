@@ -16,6 +16,17 @@ fn main() {
             println!("cargo:rustc-link-arg=/EXPORT:NvOptimusEnablement,DATA");
         }
     }
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("ios") {
+        println!("cargo:rustc-link-lib=framework=QuartzCore");
+        println!("cargo:rustc-link-lib=framework=UIKit");
+        println!("cargo:rustc-link-lib=framework=AudioToolbox");
+        println!("cargo:rerun-if-changed=ios/AliceNativeMenu.m");
+        println!("cargo:rerun-if-changed=ios/AliceNativeMenu.h");
+        cc::Build::new()
+            .file("ios/AliceNativeMenu.m")
+            .flag("-fobjc-arc")
+            .compile("alice_native_menu");
+    }
 }
 
 /// Version strings alone cannot distinguish two development builds on `coop`.

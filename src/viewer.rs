@@ -530,7 +530,7 @@ fn starting_stats(options: &Options, map: &str, entry: Option<&str>) -> Stats {
     stats
 }
 
-mod start;
+pub(crate) mod start;
 
 pub fn run(assets: Assets, options: Options) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>>>> {
     Box::pin(run_impl(assets, options))

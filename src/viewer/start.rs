@@ -1,5 +1,6 @@
 //! Front end before a world exists: browsing and quitting cannot create a save.
 use super::*;
+#[allow(unused_imports)]
 use crate::menu::{Action, Menu, Page};
 
 pub enum Start {
@@ -12,68 +13,77 @@ pub enum Start {
 pub async fn choose(
     assets: &mut Assets,
     options: &mut Options,
-    menu: &mut Menu,
+    _menu: &mut Menu,
     preferences: &mut crate::preferences::Preferences,
-    input: &mut crate::input::Input,
+    _input: &mut crate::input::Input,
     audio: &mut Audio,
     store: &Store,
     maps: &[String],
 ) -> Start {
-    menu.frontend = true;
-    menu.open(Page::Main, preferences, audio.settings);
-    loop {
-        match menu
-            .run(preferences, audio, store, Vec3::ZERO, 0., input)
-            .await
-        {
-            Action::Coop => {
-                audio.update(0., Vec3::ZERO, 0., true, true);
-                let visit = crate::coop::protocol::Visit {
-                    combat_preview: false,
-                    epoch: 1, map: "gvillage".into(), entry: None,
-                    difficulty: options.difficulty,
-                };
-                crate::coop::menu::open(assets, options, menu, visit, None).await;
-                if is_quit_requested() { return Start::Quit; }
-                menu.open(Page::Main, preferences, audio.settings);
-            }
-            Action::Chapters => {
-                let current = maps.iter().position(|m| m == "gvillage").unwrap_or(0);
-                match menu
-                    .choose_chapter(
-                        maps,
-                        current,
-                        None,
-                        &mut options.difficulty,
-                        preferences,
-                        audio,
-                        input,
-                    )
-                    .await
-                {
-                    crate::menu::ChapterChoice::Begin(choice) => {
-                        options.map = maps[choice.map].clone();
-                        options.entry = choice.entry.map(str::to_owned);
-                        options.new_game = true;
-                        return Start::Chapter;
-                    }
-                    crate::menu::ChapterChoice::Quit => return Start::Quit,
-                    crate::menu::ChapterChoice::Back => (),
+    #[cfg(target_os = "ios")]
+    {
+        crate::ios_menu::choose(assets, options, preferences, audio, store, maps).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let menu = _menu;
+        let input = _input;
+        menu.frontend = true;
+        menu.open(Page::Main, preferences, audio.settings);
+        loop {
+            match menu
+                .run(preferences, audio, store, Vec3::ZERO, 0., input)
+                .await
+            {
+                Action::Coop => {
+                    audio.update(0., Vec3::ZERO, 0., true, true);
+                    let visit = crate::coop::protocol::Visit {
+                        combat_preview: false,
+                        epoch: 1, map: "gvillage".into(), entry: None,
+                        difficulty: options.difficulty,
+                    };
+                    crate::coop::menu::open(assets, options, menu, visit, None).await;
+                    if is_quit_requested() { return Start::Quit; }
+                    menu.open(Page::Main, preferences, audio.settings);
                 }
+                Action::Chapters => {
+                    let current = maps.iter().position(|m| m == "gvillage").unwrap_or(0);
+                    match menu
+                        .choose_chapter(
+                            maps,
+                            current,
+                            None,
+                            &mut options.difficulty,
+                            preferences,
+                            audio,
+                            input,
+                        )
+                        .await
+                    {
+                        crate::menu::ChapterChoice::Begin(choice) => {
+                            options.map = maps[choice.map].clone();
+                            options.entry = choice.entry.map(str::to_owned);
+                            options.new_game = true;
+                            return Start::Chapter;
+                        }
+                        crate::menu::ChapterChoice::Quit => return Start::Quit,
+                        crate::menu::ChapterChoice::Back => (),
+                    }
+                }
+                Action::NewGame(difficulty) => {
+                    options.map = "gvillage".into();
+                    options.entry = None;
+                    options.difficulty = difficulty;
+                    options.new_game = true;
+                    return Start::NewGame;
+                }
+                Action::Load(slot) => match store.read(slot) {
+                    Ok(loaded) => return Start::Load(Box::new(loaded)),
+                    Err(e) => menu.message = format!("Load failed: {e:#}"),
+                },
+                Action::Quit => return Start::Quit,
+                Action::Save(_) | Action::Resume => unreachable!("No game exists at the front end"),
             }
-            Action::NewGame(difficulty) => {
-                options.map = "gvillage".into();
-                options.entry = None;
-                options.difficulty = difficulty;
-                options.new_game = true;
-                return Start::NewGame;
-            }
-            Action::Load(slot) => match store.read(slot) {
-                Ok(loaded) => return Start::Load(Box::new(loaded)),
-                Err(e) => menu.message = format!("Load failed: {e:#}"),
-            },
-            Action::Quit => return Start::Quit,
-            Action::Save(_) | Action::Resume => unreachable!("No game exists at the front end"),
         }
     }
 }

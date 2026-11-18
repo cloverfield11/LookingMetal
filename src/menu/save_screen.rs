@@ -156,7 +156,7 @@ impl Film {
 }
 
 /// UTC is explicit so saves remain unambiguous across time-zone changes.
-pub(super) fn timestamp(ms: u64) -> String {
+pub(crate) fn timestamp(ms: u64) -> String {
     let seconds = ms / 1000;
     let days = (seconds / 86400).min(2_932_896) as i64;
     let z = days + 719468;

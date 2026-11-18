@@ -738,6 +738,7 @@ name = "looking-metal"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "cc",
  "deunicode",
  "encoding_rs",
  "flate2",
