@@ -572,8 +572,11 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
     let mut weapon_buttons = crate::weapon_rules::Buttons::default();
     weapon_buttons.block();
     preferences.display();
-    escape_menu.backdrop();
-    ui.toast("Opening Wonderland...", screen_height() - 70.);
+    #[cfg(not(target_os = "ios"))]
+    {
+        escape_menu.backdrop();
+        ui.toast("Opening Wonderland...", screen_height() - 70.);
+    }
     next_frame().await;
     let saves_enabled = !(options.npc_preview
         || options.combat_preview
@@ -611,8 +614,11 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
         options.entry = loaded.game.level()?.entry.clone();
         options.difficulty = loaded.game.stats.difficulty;
     }
-    escape_menu.backdrop();
-    ui.toast("Opening Wonderland...", screen_height() - 70.);
+    #[cfg(not(target_os = "ios"))]
+    {
+        escape_menu.backdrop();
+        ui.toast("Opening Wonderland...", screen_height() - 70.);
+    }
     next_frame().await;
     let mut level_choices = crate::campaign::level_choices(&maps);
     escape_menu.localize_choices(&mut level_choices, &maps);
@@ -893,12 +899,20 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
         let backup = loaded.backup;
         match save::Restored::build(&mut assets, loaded.game) {
             Ok(restored) => {
-                apply_loaded!(restored);
-                hud.announce(if backup {
-                    "Previous save restored / P or click to resume"
-                } else {
-                    "Game restored / P or click to resume"
-                });
+                let pause_on_restore = if cfg!(target_os = "ios") { false } else { true };
+                apply_loaded!(restored, pause_on_restore);
+                #[cfg(target_os = "ios")]
+                {
+                    hud.announce(if backup { "Previous save restored" } else { "Game restored" });
+                }
+                #[cfg(not(target_os = "ios"))]
+                {
+                    hud.announce(if backup {
+                        "Previous save restored / P or click to resume"
+                    } else {
+                        "Game restored / P or click to resume"
+                    });
+                }
             }
             Err(e) => {
                 paused = true;
@@ -1455,10 +1469,12 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
             && !menu
             && !inventory_menu
             && !console_input
-            && (is_mouse_button_pressed(MouseButton::Left) || input.pad_pressed("A"))
+            && (is_mouse_button_pressed(MouseButton::Left)
+                || input.pad_pressed("A")
+                || (run_touch_ui && !macroquad::input::touches().is_empty()))
         {
             let (mx, my) = mouse_position();
-            if mx >= 0. && my >= 0. && mx < screen_width() && my < screen_height() {
+            if run_touch_ui || (mx >= 0. && my >= 0. && mx < screen_width() && my < screen_height()) {
                 paused = false;
                 clock.pause();
             }
@@ -3237,6 +3253,8 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
         if paused && !menu && !inventory_menu && !console_input && !help {
             ui.paused(&if input.using_pad {
                 "A or Start to resume".into()
+            } else if run_touch_ui {
+                "Tap screen or Pause button to resume".into()
             } else {
                 format!("{} or click to resume", input.label(&preferences, "P"))
             });

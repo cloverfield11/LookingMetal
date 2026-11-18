@@ -12,6 +12,7 @@ typedef enum {
     AliceMenuActionChapters = 3,
     AliceMenuActionSettings = 4,
     AliceMenuActionQuit = 5,
+    AliceMenuActionContinue = 6,
 } AliceMenuAction;
 
 typedef struct {
@@ -24,6 +25,7 @@ typedef struct {
     float voice_vol;
     float look_sens;
     int invert_y;
+    int metal_hud;
 } AliceMenuResult;
 
 typedef struct {
@@ -41,14 +43,17 @@ typedef struct {
 } AliceChapterInfo;
 
 void AliceNativeMenu_Show(void* root_vc_ptr,
+                          int has_continue, int continue_slot,
+                          const char* continue_chapter, const char* continue_date,
                           const AliceSaveSlotInfo* slots, int slot_count,
                           const AliceChapterInfo* chapters, int chapter_count,
                           float sound_vol, float music_vol, float voice_vol,
-                          float look_sens, int invert_y);
+                          float look_sens, int invert_y, int metal_hud);
 
 int AliceNativeMenu_HasAction(void);
 AliceMenuResult AliceNativeMenu_GetResult(void);
 void AliceNativeMenu_Dismiss(void);
+void AliceNativeMenu_SetMetalHUD(int enabled);
 
 #ifdef __cplusplus
 }

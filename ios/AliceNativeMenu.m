@@ -1,7 +1,9 @@
 #import "AliceNativeMenu.h"
+#import <QuartzCore/QuartzCore.h>
 
-// Forward declaration if miniquad exports it
+// Forward declarations from miniquad
 extern void* miniquad_ios_root_view_controller(void) __attribute__((weak));
+extern void* miniquad_ios_mtk_view(void) __attribute__((weak));
 
 static AliceMenuResult s_result = {0};
 static int s_has_action = 0;
@@ -16,7 +18,6 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 };
 
 @interface AliceNativeMenuView : UIView <UIScrollViewDelegate>
-@property (nonatomic, strong) UIVisualEffectView *blurView;
 @property (nonatomic, strong) UIView *cardView;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *subtitleLabel;
@@ -24,6 +25,11 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 
 // State data
 @property (nonatomic, assign) MenuPage currentPage;
+@property (nonatomic, assign) BOOL hasContinue;
+@property (nonatomic, assign) int continueSlot;
+@property (nonatomic, copy) NSString *continueChapter;
+@property (nonatomic, copy) NSString *continueDate;
+
 @property (nonatomic, strong) NSMutableArray<NSDictionary*> *slotItems;
 @property (nonatomic, strong) NSMutableArray<NSDictionary*> *chapterItems;
 @property (nonatomic, assign) float soundVol;
@@ -31,6 +37,7 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 @property (nonatomic, assign) float voiceVol;
 @property (nonatomic, assign) float lookSens;
 @property (nonatomic, assign) BOOL invertY;
+@property (nonatomic, assign) BOOL metalHUD;
 
 @property (nonatomic, strong) UIImpactFeedbackGenerator *haptic;
 @end
@@ -48,30 +55,31 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 }
 
 - (void)setupUI {
-    // 1. Frosted Glass Backdrop
-    UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
-    self.blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-    self.blurView.frame = self.bounds;
-    self.blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [self addSubview:self.blurView];
+    // 1. Solid opaque background so absolutely nothing of the legacy PC menu can bleed through
+    self.backgroundColor = [UIColor colorWithRed:0.04 green:0.04 blue:0.06 alpha:1.0];
 
-    // Dark tint overlay for atmospheric gothic depth
-    UIView *tintView = [[UIView alloc] initWithFrame:self.bounds];
-    tintView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    tintView.backgroundColor = [UIColor colorWithRed:0.02 green:0.02 blue:0.04 alpha:0.65];
-    [self.blurView.contentView addSubview:tintView];
+    // Subtle atmospheric dark vignette gradient
+    CAGradientLayer *gradient = [CAGradientLayer layer];
+    gradient.frame = self.bounds;
+    gradient.colors = @[
+        (id)[UIColor colorWithRed:0.06 green:0.04 blue:0.08 alpha:1.0].CGColor,
+        (id)[UIColor colorWithRed:0.02 green:0.02 blue:0.03 alpha:1.0].CGColor
+    ];
+    gradient.startPoint = CGPointMake(0.5, 0.0);
+    gradient.endPoint = CGPointMake(0.5, 1.0);
+    [self.layer addSublayer:gradient];
 
     // 2. Centered Floating Card
     self.cardView = [[UIView alloc] init];
-    self.cardView.backgroundColor = [UIColor colorWithWhite:0.10 alpha:0.75];
+    self.cardView.backgroundColor = [UIColor colorWithWhite:0.12 alpha:0.92];
     self.cardView.layer.cornerRadius = 24.0;
     if (@available(iOS 13.0, *)) {
         self.cardView.layer.cornerCurve = kCACornerCurveContinuous;
     }
-    self.cardView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.18].CGColor;
+    self.cardView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.20].CGColor;
     self.cardView.layer.borderWidth = 1.2;
     self.cardView.layer.shadowColor = [UIColor blackColor].CGColor;
-    self.cardView.layer.shadowOpacity = 0.55;
+    self.cardView.layer.shadowOpacity = 0.65;
     self.cardView.layer.shadowRadius = 24.0;
     self.cardView.layer.shadowOffset = CGSizeMake(0, 10);
     [self addSubview:self.cardView];
@@ -79,14 +87,14 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     // 3. Header
     self.titleLabel = [[UILabel alloc] init];
     self.titleLabel.text = @"AMERICAN MCGEE'S ALICE";
-    self.titleLabel.textColor = [UIColor colorWithRed:0.95 green:0.92 blue:0.86 alpha:1.0];
+    self.titleLabel.textColor = [UIColor colorWithRed:0.96 green:0.93 blue:0.87 alpha:1.0];
     self.titleLabel.font = [UIFont fontWithName:@"Georgia-Bold" size:22.0] ?: [UIFont boldSystemFontOfSize:22.0];
     self.titleLabel.textAlignment = NSTextAlignmentCenter;
     [self.cardView addSubview:self.titleLabel];
 
     self.subtitleLabel = [[UILabel alloc] init];
     self.subtitleLabel.text = @"LOOKINGMETAL · APPLE METAL 3 · 120 FPS";
-    self.subtitleLabel.textColor = [UIColor colorWithWhite:0.70 alpha:1.0];
+    self.subtitleLabel.textColor = [UIColor colorWithRed:0.75 green:0.75 blue:0.80 alpha:1.0];
     self.subtitleLabel.font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightSemibold];
     self.subtitleLabel.textAlignment = NSTextAlignmentCenter;
     [self.cardView addSubview:self.subtitleLabel];
@@ -101,22 +109,28 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 
 - (void)layoutSubviews {
     [super layoutSubviews];
+    if (self.layer.sublayers.count > 0) {
+        CALayer *grad = self.layer.sublayers[0];
+        if ([grad isKindOfClass:[CAGradientLayer class]]) {
+            grad.frame = self.bounds;
+        }
+    }
     [self updateLayout];
 }
 
 - (void)updateLayout {
     CGSize sz = self.bounds.size;
-    CGFloat cardW = MIN(sz.width - 32.0, 520.0);
-    CGFloat cardH = MIN(sz.height - 32.0, 360.0);
+    CGFloat cardW = MIN(sz.width - 48.0, 560.0);
+    CGFloat cardH = MIN(sz.height - 24.0, 380.0);
     CGFloat cardX = (sz.width - cardW) * 0.5;
     CGFloat cardY = (sz.height - cardH) * 0.5;
 
     self.cardView.frame = CGRectMake(cardX, cardY, cardW, cardH);
-    self.titleLabel.frame = CGRectMake(16.0, 16.0, cardW - 32.0, 26.0);
-    self.subtitleLabel.frame = CGRectMake(16.0, 42.0, cardW - 32.0, 16.0);
+    self.titleLabel.frame = CGRectMake(16.0, 14.0, cardW - 32.0, 24.0);
+    self.subtitleLabel.frame = CGRectMake(16.0, 38.0, cardW - 32.0, 16.0);
 
-    CGFloat contentY = 66.0;
-    self.pageContainer.frame = CGRectMake(16.0, contentY, cardW - 32.0, cardH - contentY - 16.0);
+    CGFloat contentY = 58.0;
+    self.pageContainer.frame = CGRectMake(16.0, contentY, cardW - 32.0, cardH - contentY - 14.0);
 }
 
 - (void)showPage:(MenuPage)page {
@@ -136,32 +150,9 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     }
 
     CATransition *transition = [CATransition animation];
-    transition.duration = 0.22;
+    transition.duration = 0.20;
     transition.type = kCATransitionFade;
     [self.pageContainer.layer addAnimation:transition forKey:nil];
-}
-
-#pragma mark - Button Helper
-
-- (UIButton *)createButtonWithTitle:(NSString *)title icon:(NSString *)icon tag:(NSInteger)tag action:(SEL)action {
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
-    btn.tag = tag;
-    [btn addTarget:self action:action forControlEvents:UIControlEventTouchUpInside];
-    btn.layer.cornerRadius = 14.0;
-    if (@available(iOS 13.0, *)) {
-        btn.layer.cornerCurve = kCACornerCurveContinuous;
-    }
-    btn.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.10];
-    btn.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
-    btn.layer.borderWidth = 1.0;
-
-    NSString *fullText = icon ? [NSString stringWithFormat:@"%@  %@", icon, title] : title;
-    [btn setTitle:fullText forState:UIControlStateNormal];
-    [btn setTitleColor:[UIColor colorWithWhite:0.95 alpha:1.0] forState:UIControlStateNormal];
-    [btn setTitleColor:[UIColor colorWithWhite:0.60 alpha:1.0] forState:UIControlStateHighlighted];
-    btn.titleLabel.font = [UIFont systemFontOfSize:16.0 weight:UIFontWeightMedium];
-
-    return btn;
 }
 
 #pragma mark - Page 0: Main Menu
@@ -169,28 +160,70 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 - (void)buildMainPage {
     CGSize size = self.pageContainer.bounds.size;
     CGFloat btnW = size.width;
-    CGFloat btnH = 44.0;
-    CGFloat spacing = 8.0;
 
-    NSArray *items = @[
-        @{@"t": @"Новая игра (New Game)", @"i": @"⚔️", @"tag": @1},
-        @{@"t": @"Загрузить (Load Game)", @"i": @"💾", @"tag": @2},
-        @{@"t": @"Выбор главы (Chapters)", @"i": @"📖", @"tag": @3},
-        @{@"t": @"Настройки (Settings)", @"i": @"⚙️", @"tag": @4},
-        @{@"t": @"Выход в лаунчер (Quit)", @"i": @"🚪", @"tag": @5},
-    ];
+    NSMutableArray *items = [NSMutableArray array];
+    if (self.hasContinue) {
+        NSString *sub = [NSString stringWithFormat:@"%@  ·  %@", self.continueChapter ?: @"", self.continueDate ?: @""];
+        [items addObject:@{@"t": @"Продолжить (Continue)", @"sub": sub, @"i": @"▶️", @"tag": @6, @"highlight": @YES}];
+    }
+    [items addObject:@{@"t": @"Новая игра (New Game)", @"i": @"⚔️", @"tag": @1}];
+    [items addObject:@{@"t": @"Загрузить (Load Game)", @"i": @"💾", @"tag": @2}];
+    [items addObject:@{@"t": @"Выбор главы (Chapters)", @"i": @"📖", @"tag": @3}];
+    [items addObject:@{@"t": @"Настройки (Settings)", @"i": @"⚙️", @"tag": @4}];
+    [items addObject:@{@"t": @"Выход в лаунчер (Quit)", @"i": @"🚪", @"tag": @5}];
 
+    CGFloat btnH = items.count > 5 ? 42.0 : 46.0;
+    CGFloat spacing = 6.0;
     CGFloat totalH = items.count * btnH + (items.count - 1) * spacing;
     CGFloat startY = MAX(0.0, (size.height - totalH) * 0.5);
 
     NSUInteger count = items.count;
     for (NSUInteger i = 0; i < count; i++) {
         NSDictionary *dict = items[i];
-        UIButton *btn = [self createButtonWithTitle:dict[@"t"]
-                                               icon:dict[@"i"]
-                                                tag:[dict[@"tag"] integerValue]
-                                             action:@selector(onMainMenuTap:)];
+        BOOL isHighlight = [dict[@"highlight"] boolValue];
+        NSString *sub = dict[@"sub"];
+
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+        btn.tag = [dict[@"tag"] integerValue];
+        [btn addTarget:self action:@selector(onMainMenuTap:) forControlEvents:UIControlEventTouchUpInside];
         btn.frame = CGRectMake(0, startY + i * (btnH + spacing), btnW, btnH);
+        btn.layer.cornerRadius = 14.0;
+        if (@available(iOS 13.0, *)) {
+            btn.layer.cornerCurve = kCACornerCurveContinuous;
+        }
+
+        if (isHighlight) {
+            btn.backgroundColor = [UIColor colorWithRed:0.75 green:0.22 blue:0.22 alpha:0.40];
+            btn.layer.borderColor = [UIColor colorWithRed:0.95 green:0.75 blue:0.35 alpha:0.65].CGColor;
+            btn.layer.borderWidth = 1.3;
+
+            if (sub && sub.length > 0) {
+                UILabel *tL = [[UILabel alloc] initWithFrame:CGRectMake(16, 3, btnW - 32, 20)];
+                tL.text = [NSString stringWithFormat:@"%@  %@", dict[@"i"], dict[@"t"]];
+                tL.textColor = [UIColor colorWithRed:1.0 green:0.92 blue:0.75 alpha:1.0];
+                tL.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightBold];
+                [btn addSubview:tL];
+
+                UILabel *sL = [[UILabel alloc] initWithFrame:CGRectMake(40, 23, btnW - 56, 15)];
+                sL.text = sub;
+                sL.textColor = [UIColor colorWithWhite:0.80 alpha:1.0];
+                sL.font = [UIFont systemFontOfSize:11.5 weight:UIFontWeightRegular];
+                [btn addSubview:sL];
+            } else {
+                [btn setTitle:[NSString stringWithFormat:@"%@  %@", dict[@"i"], dict[@"t"]] forState:UIControlStateNormal];
+                [btn setTitleColor:[UIColor colorWithRed:1.0 green:0.92 blue:0.75 alpha:1.0] forState:UIControlStateNormal];
+                btn.titleLabel.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightBold];
+            }
+        } else {
+            btn.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.10];
+            btn.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
+            btn.layer.borderWidth = 1.0;
+            NSString *fullText = dict[@"i"] ? [NSString stringWithFormat:@"%@  %@", dict[@"i"], dict[@"t"]] : dict[@"t"];
+            [btn setTitle:fullText forState:UIControlStateNormal];
+            [btn setTitleColor:[UIColor colorWithWhite:0.95 alpha:1.0] forState:UIControlStateNormal];
+            btn.titleLabel.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightMedium];
+        }
+
         [self.pageContainer addSubview:btn];
     }
 }
@@ -198,6 +231,13 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 - (void)onMainMenuTap:(UIButton *)btn {
     [self.haptic impactOccurred];
     switch (btn.tag) {
+        case 6: {
+            s_result.action = AliceMenuActionContinue;
+            s_result.save_slot = self.continueSlot;
+            s_has_action = 1;
+            [self dismissWithAnimation];
+            break;
+        }
         case 1: [self showPage:MenuPageNewGame]; break;
         case 2: [self showPage:MenuPageLoad]; break;
         case 3: [self showPage:MenuPageChapters]; break;
@@ -217,12 +257,15 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     CGSize size = self.pageContainer.bounds.size;
     CGFloat btnW = size.width;
 
-    UIButton *backBtn = [self createButtonWithTitle:@"‹ Назад в меню" icon:nil tag:0 action:@selector(onBackTap:)];
-    backBtn.frame = CGRectMake(0, 0, 140.0, 34.0);
+    UIButton *backBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    backBtn.frame = CGRectMake(0, 0, 140.0, 32.0);
+    [backBtn setTitle:@"‹ Назад в меню" forState:UIControlStateNormal];
+    [backBtn setTitleColor:[UIColor colorWithWhite:0.90 alpha:1.0] forState:UIControlStateNormal];
     backBtn.titleLabel.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightRegular];
+    [backBtn addTarget:self action:@selector(onBackTap:) forControlEvents:UIControlEventTouchUpInside];
     [self.pageContainer addSubview:backBtn];
 
-    UILabel *header = [[UILabel alloc] initWithFrame:CGRectMake(148.0, 0, size.width - 148.0, 34.0)];
+    UILabel *header = [[UILabel alloc] initWithFrame:CGRectMake(148.0, 0, size.width - 148.0, 32.0)];
     header.text = @"ВЫБЕРИТЕ СЛОЖНОСТЬ";
     header.textColor = [UIColor colorWithRed:0.95 green:0.85 blue:0.65 alpha:1.0];
     header.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightBold];
@@ -237,7 +280,7 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 
     CGFloat btnH = 56.0;
     CGFloat spacing = 10.0;
-    CGFloat startY = 44.0;
+    CGFloat startY = 42.0;
 
     NSUInteger diffCount = diffs.count;
     for (NSUInteger i = 0; i < diffCount; i++) {
@@ -283,19 +326,22 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 - (void)buildLoadPage {
     CGSize size = self.pageContainer.bounds.size;
 
-    UIButton *backBtn = [self createButtonWithTitle:@"‹ Назад в меню" icon:nil tag:0 action:@selector(onBackTap:)];
-    backBtn.frame = CGRectMake(0, 0, 140.0, 34.0);
+    UIButton *backBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    backBtn.frame = CGRectMake(0, 0, 140.0, 32.0);
+    [backBtn setTitle:@"‹ Назад в меню" forState:UIControlStateNormal];
+    [backBtn setTitleColor:[UIColor colorWithWhite:0.90 alpha:1.0] forState:UIControlStateNormal];
     backBtn.titleLabel.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightRegular];
+    [backBtn addTarget:self action:@selector(onBackTap:) forControlEvents:UIControlEventTouchUpInside];
     [self.pageContainer addSubview:backBtn];
 
-    UILabel *header = [[UILabel alloc] initWithFrame:CGRectMake(148.0, 0, size.width - 148.0, 34.0)];
-    header.text = @"СОХРАНЕНИЯ (LOAD GAME)";
+    UILabel *header = [[UILabel alloc] initWithFrame:CGRectMake(148.0, 0, size.width - 148.0, 32.0)];
+    header.text = @"ЗАГРУЗИТЬ СОХРАНЕНИЕ";
     header.textColor = [UIColor colorWithRed:0.95 green:0.85 blue:0.65 alpha:1.0];
     header.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightBold];
     header.textAlignment = NSTextAlignmentRight;
     [self.pageContainer addSubview:header];
 
-    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 42.0, size.width, size.height - 42.0)];
+    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 38.0, size.width, size.height - 38.0)];
     scroll.showsVerticalScrollIndicator = YES;
     [self.pageContainer addSubview:scroll];
 
@@ -371,19 +417,22 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 - (void)buildChaptersPage {
     CGSize size = self.pageContainer.bounds.size;
 
-    UIButton *backBtn = [self createButtonWithTitle:@"‹ Назад в меню" icon:nil tag:0 action:@selector(onBackTap:)];
-    backBtn.frame = CGRectMake(0, 0, 140.0, 34.0);
+    UIButton *backBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    backBtn.frame = CGRectMake(0, 0, 140.0, 32.0);
+    [backBtn setTitle:@"‹ Назад в меню" forState:UIControlStateNormal];
+    [backBtn setTitleColor:[UIColor colorWithWhite:0.90 alpha:1.0] forState:UIControlStateNormal];
     backBtn.titleLabel.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightRegular];
+    [backBtn addTarget:self action:@selector(onBackTap:) forControlEvents:UIControlEventTouchUpInside];
     [self.pageContainer addSubview:backBtn];
 
-    UILabel *header = [[UILabel alloc] initWithFrame:CGRectMake(148.0, 0, size.width - 148.0, 34.0)];
-    header.text = @"ГЛАВЫ (CHAPTERS)";
+    UILabel *header = [[UILabel alloc] initWithFrame:CGRectMake(148.0, 0, size.width - 148.0, 32.0)];
+    header.text = @"ВЫБОР ГЛАВЫ";
     header.textColor = [UIColor colorWithRed:0.95 green:0.85 blue:0.65 alpha:1.0];
     header.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightBold];
     header.textAlignment = NSTextAlignmentRight;
     [self.pageContainer addSubview:header];
 
-    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 42.0, size.width, size.height - 42.0)];
+    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 38.0, size.width, size.height - 38.0)];
     scroll.showsVerticalScrollIndicator = YES;
     [self.pageContainer addSubview:scroll];
 
@@ -393,12 +442,25 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     NSUInteger chapCount = self.chapterItems.count;
     for (NSUInteger i = 0; i < chapCount; i++) {
         NSDictionary *c = self.chapterItems[i];
-        UIButton *btn = [self createButtonWithTitle:c[@"title"]
-                                               icon:@"📖"
-                                                tag:[c[@"idx"] integerValue]
-                                             action:@selector(onChapterSelect:)];
+        UIButton *btn = [UIButton buttonWithType:UIButtonTypeCustom];
+        btn.tag = [c[@"idx"] integerValue];
+        [btn addTarget:self action:@selector(onChapterSelect:) forControlEvents:UIControlEventTouchUpInside];
         btn.frame = CGRectMake(0, i * (btnH + spacing), size.width, btnH);
+        btn.layer.cornerRadius = 10.0;
+        if (@available(iOS 13.0, *)) {
+            btn.layer.cornerCurve = kCACornerCurveContinuous;
+        }
+        btn.backgroundColor = [UIColor colorWithWhite:1.0 alpha:0.10];
+        btn.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.14].CGColor;
+        btn.layer.borderWidth = 1.0;
         btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
+
+        UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(14, 0, size.width - 28, btnH)];
+        l.text = [NSString stringWithFormat:@"📖  %@", c[@"title"]];
+        l.textColor = [UIColor colorWithWhite:0.95 alpha:1.0];
+        l.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightMedium];
+        [btn addSubview:l];
+
         [scroll addSubview:btn];
     }
 
@@ -418,23 +480,26 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 - (void)buildSettingsPage {
     CGSize size = self.pageContainer.bounds.size;
 
-    UIButton *backBtn = [self createButtonWithTitle:@"‹ Назад в меню" icon:nil tag:0 action:@selector(onBackTap:)];
-    backBtn.frame = CGRectMake(0, 0, 140.0, 34.0);
+    UIButton *backBtn = [UIButton buttonWithType:UIButtonTypeCustom];
+    backBtn.frame = CGRectMake(0, 0, 140.0, 32.0);
+    [backBtn setTitle:@"‹ Назад в меню" forState:UIControlStateNormal];
+    [backBtn setTitleColor:[UIColor colorWithWhite:0.90 alpha:1.0] forState:UIControlStateNormal];
     backBtn.titleLabel.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightRegular];
+    [backBtn addTarget:self action:@selector(onBackTap:) forControlEvents:UIControlEventTouchUpInside];
     [self.pageContainer addSubview:backBtn];
 
-    UILabel *header = [[UILabel alloc] initWithFrame:CGRectMake(148.0, 0, size.width - 148.0, 34.0)];
+    UILabel *header = [[UILabel alloc] initWithFrame:CGRectMake(148.0, 0, size.width - 148.0, 32.0)];
     header.text = @"НАСТРОЙКИ (SETTINGS)";
     header.textColor = [UIColor colorWithRed:0.95 green:0.85 blue:0.65 alpha:1.0];
     header.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightBold];
     header.textAlignment = NSTextAlignmentRight;
     [self.pageContainer addSubview:header];
 
-    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 40.0, size.width, size.height - 40.0)];
+    UIScrollView *scroll = [[UIScrollView alloc] initWithFrame:CGRectMake(0, 36.0, size.width, size.height - 36.0)];
     scroll.showsVerticalScrollIndicator = YES;
     [self.pageContainer addSubview:scroll];
 
-    CGFloat rowH = 44.0;
+    CGFloat rowH = 42.0;
     CGFloat y = 0.0;
 
     // 1. Sound Vol
@@ -458,10 +523,10 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     UILabel *tl = [[UILabel alloc] initWithFrame:CGRectMake(4, 0, size.width - 70, rowH)];
     tl.text = @"↕️ Инвертировать ось Y камеры";
     tl.textColor = [UIColor whiteColor];
-    tl.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightMedium];
+    tl.font = [UIFont systemFontOfSize:13.5 weight:UIFontWeightMedium];
     [toggleRow addSubview:tl];
 
-    UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(size.width - 55, 6, 51, 31)];
+    UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(size.width - 55, 5, 51, 31)];
     sw.on = self.invertY;
     sw.onTintColor = [UIColor colorWithRed:0.85 green:0.25 blue:0.25 alpha:1.0];
     [sw addTarget:self action:@selector(onInvertYToggle:) forControlEvents:UIControlEventValueChanged];
@@ -469,20 +534,36 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     [scroll addSubview:toggleRow];
     y += rowH;
 
+    // 6. Metal Performance HUD
+    UIView *hudRow = [[UIView alloc] initWithFrame:CGRectMake(0, y, size.width, rowH)];
+    UILabel *hl = [[UILabel alloc] initWithFrame:CGRectMake(4, 0, size.width - 70, rowH)];
+    hl.text = @"📊 Metal Performance HUD (FPS / GPU / Frame Time)";
+    hl.textColor = [UIColor colorWithRed:0.70 green:0.95 blue:0.80 alpha:1.0];
+    hl.font = [UIFont systemFontOfSize:13.5 weight:UIFontWeightMedium];
+    [hudRow addSubview:hl];
+
+    UISwitch *hudSw = [[UISwitch alloc] initWithFrame:CGRectMake(size.width - 55, 5, 51, 31)];
+    hudSw.on = self.metalHUD;
+    hudSw.onTintColor = [UIColor colorWithRed:0.20 green:0.75 blue:0.45 alpha:1.0];
+    [hudSw addTarget:self action:@selector(onMetalHUDToggle:) forControlEvents:UIControlEventValueChanged];
+    [hudRow addSubview:hudSw];
+    [scroll addSubview:hudRow];
+    y += rowH;
+
     scroll.contentSize = CGSizeMake(size.width, y + 10.0);
 }
 
 - (void)addSliderTo:(UIView *)parent y:(CGFloat)y label:(NSString *)label val:(float)val min:(float)min max:(float)max tag:(NSInteger)tag action:(SEL)act {
     CGFloat w = parent.bounds.size.width;
-    UIView *row = [[UIView alloc] initWithFrame:CGRectMake(0, y, w, 44.0)];
+    UIView *row = [[UIView alloc] initWithFrame:CGRectMake(0, y, w, 42.0)];
 
-    UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(4, 0, w * 0.45, 44.0)];
+    UILabel *l = [[UILabel alloc] initWithFrame:CGRectMake(4, 0, w * 0.45, 42.0)];
     l.text = label;
     l.textColor = [UIColor whiteColor];
     l.font = [UIFont systemFontOfSize:13.0 weight:UIFontWeightMedium];
     [row addSubview:l];
 
-    UISlider *sl = [[UISlider alloc] initWithFrame:CGRectMake(w * 0.45 + 10, 6, w * 0.55 - 14, 32.0)];
+    UISlider *sl = [[UISlider alloc] initWithFrame:CGRectMake(w * 0.45 + 10, 5, w * 0.55 - 14, 32.0)];
     sl.minimumValue = min;
     sl.maximumValue = max;
     sl.value = val;
@@ -509,13 +590,21 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     s_result.invert_y = sw.isOn ? 1 : 0;
 }
 
+- (void)onMetalHUDToggle:(UISwitch *)sw {
+    [self.haptic impactOccurred];
+    self.metalHUD = sw.isOn;
+    s_result.metal_hud = sw.isOn ? 1 : 0;
+    AliceNativeMenu_SetMetalHUD(sw.isOn ? 1 : 0);
+}
+
 - (void)onBackTap:(UIButton *)btn {
+    (void)btn;
     [self.haptic impactOccurred];
     [self showPage:MenuPageMain];
 }
 
 - (void)dismissWithAnimation {
-    [UIView animateWithDuration:0.25 animations:^{
+    [UIView animateWithDuration:0.22 animations:^{
         self.alpha = 0.0;
         self.cardView.transform = CGAffineTransformMakeScale(0.92, 0.92);
     } completion:^(BOOL finished) {
@@ -528,6 +617,33 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 @end
 
 #pragma mark - C API Bridge
+
+void* AliceGetMTKView(void) {
+    if (miniquad_ios_mtk_view) {
+        return miniquad_ios_mtk_view();
+    }
+    return NULL;
+}
+
+void AliceNativeMenu_SetMetalHUD(int enabled) {
+    setenv("MTL_HUD_ENABLED", enabled ? "1" : "0", 1);
+    [[NSUserDefaults standardUserDefaults] setBool:(enabled != 0) forKey:@"MetalHUDEnabled"];
+    [[NSUserDefaults standardUserDefaults] synchronize];
+
+    if (@available(iOS 16.0, *)) {
+        void* p = AliceGetMTKView();
+        if (p) {
+            UIView *mtkView = (__bridge UIView*)p;
+            if ([mtkView.layer respondsToSelector:@selector(setDeveloperHUDProperties:)]) {
+                if (enabled) {
+                    [mtkView.layer performSelector:@selector(setDeveloperHUDProperties:) withObject:@{@"mode": @"default"}];
+                } else {
+                    [mtkView.layer performSelector:@selector(setDeveloperHUDProperties:) withObject:nil];
+                }
+            }
+        }
+    }
+}
 
 UIViewController* AliceGetRootViewController(void* hint) {
     if (hint) {
@@ -556,10 +672,12 @@ UIViewController* AliceGetRootViewController(void* hint) {
 }
 
 void AliceNativeMenu_Show(void* root_vc_ptr,
+                          int has_continue, int continue_slot,
+                          const char* continue_chapter, const char* continue_date,
                           const AliceSaveSlotInfo* slots, int slot_count,
                           const AliceChapterInfo* chapters, int chapter_count,
                           float sound_vol, float music_vol, float voice_vol,
-                          float look_sens, int invert_y) {
+                          float look_sens, int invert_y, int metal_hud) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (s_active_menu_view) {
             [s_active_menu_view removeFromSuperview];
@@ -578,6 +696,7 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
         s_result.voice_vol = voice_vol;
         s_result.look_sens = look_sens;
         s_result.invert_y = invert_y;
+        s_result.metal_hud = metal_hud;
         s_has_action = 0;
 
         AliceNativeMenuView *menu = [[AliceNativeMenuView alloc] initWithFrame:rootVC.view.bounds];
@@ -586,6 +705,16 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
         menu.voiceVol = voice_vol;
         menu.lookSens = look_sens;
         menu.invertY = (invert_y != 0);
+        menu.metalHUD = (metal_hud != 0);
+
+        menu.hasContinue = (has_continue != 0);
+        menu.continueSlot = continue_slot;
+        menu.continueChapter = continue_chapter ? [NSString stringWithUTF8String:continue_chapter] : @"";
+        menu.continueDate = continue_date ? [NSString stringWithUTF8String:continue_date] : @"";
+
+        if (metal_hud) {
+            AliceNativeMenu_SetMetalHUD(1);
+        }
 
         // Slots
         menu.slotItems = [NSMutableArray arrayWithCapacity:slot_count];
@@ -621,7 +750,7 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
         [rootVC.view addSubview:menu];
         s_active_menu_view = menu;
 
-        [UIView animateWithDuration:0.25 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+        [UIView animateWithDuration:0.22 delay:0 options:UIViewAnimationOptionCurveEaseOut animations:^{
             menu.alpha = 1.0;
             menu.cardView.transform = CGAffineTransformIdentity;
         } completion:nil];

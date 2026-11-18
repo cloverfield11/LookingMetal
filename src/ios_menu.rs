@@ -26,6 +26,7 @@ pub struct AliceMenuResult {
     pub voice_vol: c_float,
     pub look_sens: c_float,
     pub invert_y: c_int,
+    pub metal_hud: c_int,
 }
 
 #[repr(C)]
@@ -47,6 +48,10 @@ pub struct AliceChapterInfo {
 extern "C" {
     fn AliceNativeMenu_Show(
         root_vc_ptr: *mut c_void,
+        has_continue: c_int,
+        continue_slot: c_int,
+        continue_chapter: *const c_char,
+        continue_date: *const c_char,
         slots: *const AliceSaveSlotInfo,
         slot_count: c_int,
         chapters: *const AliceChapterInfo,
@@ -56,6 +61,7 @@ extern "C" {
         voice_vol: c_float,
         look_sens: c_float,
         invert_y: c_int,
+        metal_hud: c_int,
     );
     fn AliceNativeMenu_HasAction() -> c_int;
     fn AliceNativeMenu_GetResult() -> AliceMenuResult;
@@ -71,7 +77,20 @@ pub async fn choose(
     store: &Store,
     maps: &[String],
 ) -> Start {
-    // 1. Prepare save slots data
+    // 1. Prepare Continue option from latest save
+    let latest_save = store.latest();
+    let has_continue = latest_save.is_some();
+    let (continue_slot_idx, continue_chapter_c, continue_date_c) = if let Some((slot, ref loaded)) = latest_save {
+        let slot_idx = Slot::ALL.iter().position(|&s| s == slot).unwrap_or(0);
+        let lvl = loaded.game.level();
+        let ch_str = lvl.map_or("Неизвестно", |l| level_title(&l.map));
+        let dt_str = timestamp(loaded.saved_at);
+        (slot_idx, CString::new(ch_str).unwrap(), CString::new(dt_str).unwrap())
+    } else {
+        (0, CString::new("").unwrap(), CString::new("").unwrap())
+    };
+
+    // 2. Prepare save slots data
     struct SlotData {
         title: CString,
         chapter: CString,
@@ -130,7 +149,7 @@ pub async fn choose(
         })
         .collect();
 
-    // 2. Prepare chapters list
+    // 3. Prepare chapters list
     struct ChapterData {
         title: CString,
         map_name: CString,
@@ -155,10 +174,16 @@ pub async fn choose(
         })
         .collect();
 
-    // 3. Show UIKit Menu
+    let initial_metal_hud = if std::env::var("MTL_HUD_ENABLED").as_deref() == Ok("1") { 1 } else { 0 };
+
+    // 4. Show UIKit Menu
     unsafe {
         AliceNativeMenu_Show(
             std::ptr::null_mut(),
+            if has_continue { 1 } else { 0 },
+            continue_slot_idx as c_int,
+            continue_chapter_c.as_ptr(),
+            continue_date_c.as_ptr(),
             c_slots.as_ptr(),
             c_slots.len() as c_int,
             c_chapters.as_ptr(),
@@ -168,12 +193,13 @@ pub async fn choose(
             audio.settings.effects,
             preferences.sensitivity,
             if preferences.invert_mouse { 1 } else { 0 },
+            initial_metal_hud,
         );
     }
 
-    // 4. Render loop while UIKit menu is open
+    // 5. Render loop while UIKit menu is open
     while unsafe { AliceNativeMenu_HasAction() } == 0 {
-        clear_background(Color::new(0.02, 0.02, 0.04, 1.0));
+        clear_background(Color::new(0.04, 0.04, 0.06, 1.0));
         audio.update(0., Vec3::ZERO, 0., true, true);
         next_frame().await;
     }
@@ -188,13 +214,25 @@ pub async fn choose(
     preferences.invert_pad = res.invert_y != 0;
 
     // Small delay to let the UIKit fade-out animation play smoothly
-    for _ in 0..12 {
-        clear_background(Color::new(0.02, 0.02, 0.04, 1.0));
+    for _ in 0..10 {
+        clear_background(Color::new(0.04, 0.04, 0.06, 1.0));
         audio.update(0., Vec3::ZERO, 0., true, true);
         next_frame().await;
     }
 
     match res.action {
+        6 => {
+            // Continue
+            if let Some((_, loaded)) = store.latest() {
+                Start::Load(Box::new(loaded))
+            } else {
+                options.map = "gvillage".into();
+                options.entry = None;
+                options.difficulty = Difficulty::Normal;
+                options.new_game = true;
+                Start::NewGame
+            }
+        }
         1 => {
             // New Game
             options.map = "gvillage".into();
