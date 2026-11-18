@@ -24,8 +24,6 @@
     <string>iphoneos16.5</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
-    <key>MetalPerformanceHUD</key>
-    <true/>
     <key>CADisableMinimumFrameDurationOnPhone</key>
     <true/>
     <key>GCSupportedGameControllers</key>

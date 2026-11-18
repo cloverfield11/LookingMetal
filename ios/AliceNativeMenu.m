@@ -687,17 +687,10 @@ static void AliceLog(NSString *format, ...) {
 }
 
 static BOOL AliceIsMetalHUDRequested(void) {
-    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"MetalHUDEnabled"]) {
-        return YES;
+    NSUserDefaults *defs = [NSUserDefaults standardUserDefaults];
+    if ([defs objectForKey:@"MetalHUDEnabled"] != nil) {
+        return [defs boolForKey:@"MetalHUDEnabled"];
     }
-    NSDictionary *domain = [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"org.lookingglass.alice"];
-    if ([domain[@"MetalHUDEnabled"] boolValue]) {
-        return YES;
-    }
-    const char *e = getenv("DM_METAL_HUD");
-    if (e && atoi(e)) return YES;
-    const char *m = getenv("MTL_HUD_ENABLED");
-    if (m && atoi(m)) return YES;
 
     NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
     if (paths.count > 0) {
@@ -706,11 +699,14 @@ static BOOL AliceIsMetalHUDRequested(void) {
         NSData *d = [NSData dataWithContentsOfFile:launcherJson];
         if (d) {
             NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
-            if ([dict[@"metal_hud"] boolValue]) {
-                return YES;
+            if (dict[@"metal_hud"] != nil) {
+                return [dict[@"metal_hud"] boolValue];
             }
         }
     }
+
+    const char *m = getenv("MTL_HUD_ENABLED");
+    if (m && atoi(m) != 0) return YES;
     return NO;
 }
 
@@ -976,7 +972,12 @@ void AliceOnFrameDrawable(void* drawablePtr) {
 void AliceNativeMenu_SetMetalHUD(int enabled) {
     [[NSUserDefaults standardUserDefaults] setBool:(enabled != 0) forKey:@"MetalHUDEnabled"];
     [[NSUserDefaults standardUserDefaults] synchronize];
-    setenv("MTL_HUD_ENABLED", enabled ? "1" : "0", 1);
+    if (enabled) {
+        setenv("MTL_HUD_ENABLED", "1", 1);
+    } else {
+        unsetenv("MTL_HUD_ENABLED");
+        unsetenv("DM_METAL_HUD");
+    }
     s_last_hud_state = -1;
 
     AlicePerformanceHUD_SetVisible(enabled);
@@ -1069,17 +1070,19 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
         menu.voiceVol = voice_vol;
         menu.lookSens = look_sens;
         menu.invertY = (invert_y != 0);
-        BOOL hudSaved = [[NSUserDefaults standardUserDefaults] boolForKey:@"MetalHUDEnabled"];
-        menu.metalHUD = hudSaved || (metal_hud != 0);
+        NSUserDefaults *defs = [NSUserDefaults standardUserDefaults];
+        if ([defs objectForKey:@"MetalHUDEnabled"] != nil) {
+            menu.metalHUD = [defs boolForKey:@"MetalHUDEnabled"];
+        } else {
+            menu.metalHUD = (metal_hud != 0);
+        }
 
         menu.hasContinue = (has_continue != 0);
         menu.continueSlot = continue_slot;
         menu.continueChapter = continue_chapter ? [NSString stringWithUTF8String:continue_chapter] : @"";
         menu.continueDate = continue_date ? [NSString stringWithUTF8String:continue_date] : @"";
 
-        if (menu.metalHUD || AliceIsMetalHUDRequested()) {
-            AlicePerformanceHUD_SetVisible(1);
-        }
+        AlicePerformanceHUD_SetVisible(menu.metalHUD ? 1 : 0);
 
         // Slots
         menu.slotItems = [NSMutableArray arrayWithCapacity:slot_count];

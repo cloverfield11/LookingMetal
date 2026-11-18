@@ -191,7 +191,7 @@ pub async fn choose(
         .collect();
 
     let launcher_settings = crate::launcher::LauncherSettings::load();
-    let initial_metal_hud = if launcher_settings.metal_hud || std::env::var("MTL_HUD_ENABLED").as_deref() == Ok("1") { 1 } else { 0 };
+    let initial_metal_hud = if launcher_settings.metal_hud { 1 } else { 0 };
 
     // 4. Show UIKit Menu
     unsafe {
@@ -399,7 +399,7 @@ pub async fn pause_menu(
         .collect();
 
     let launcher_settings = crate::launcher::LauncherSettings::load();
-    let initial_metal_hud = if launcher_settings.metal_hud || std::env::var("MTL_HUD_ENABLED").as_deref() == Ok("1") { 1 } else { 0 };
+    let initial_metal_hud = if launcher_settings.metal_hud { 1 } else { 0 };
 
     // 4. Show UIKit Menu in Pause mode (is_pause = 1)
     unsafe {
