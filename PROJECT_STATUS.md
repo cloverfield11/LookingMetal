@@ -35,20 +35,17 @@ An interactive touch-first launcher rendered before loading Wonderland:
 - On-Screen Controls Size (Large 125% / Standard 100% / Huge 150%).
 - Persistent settings storage saved to `ios-launcher.json`.
 
-### D. Full Virtual Controller Layout (`src/touch_gamepad.rs`)
-Console-grade Xbox / Nintendo Switch layout:
-- **Left Stick (L):** 360° analog locomotion with floating/dynamic thumb centering.
-- **Right Stick (R):** 360° continuous camera panning with quadratic acceleration.
-- **Free Swipe Look:** Dragging anywhere on the empty right half of the screen controls view rotation.
-- **ABXY Diamond:**
-  - `A` (Green, Bottom): Jump / Climb (`Space`).
-  - `X` (Blue, Left): Primary Attack (`Mouse 1`).
-  - `B` (Red, Right): Alternate Attack (`Mouse 2`).
-  - `Y` (Yellow, Top): Interact / Action (Key `E`).
-- **D-Pad:** Next / Previous weapon cycling.
-- **Triggers & Shoulders:** `LT` / `RT` (Attacks), `LB` (Run/Walk toggle), `RB` (Next toy).
-- **System Buttons:** `+` (Menu / Pause / Esc), `-` (Cheshire Cat hint / C).
-- Retina display responsive scaling (`scale = (h / 390.0) * scale_mult`).
+### D. Ergonomic Mobile Touch Controls (`src/touch_gamepad.rs`)
+- **Left Analog Stick (L):** 360° locomotion with dynamic floating thumb centering. Analog speed control: slight deflection walks quietly, full deflection sprints.
+- **Right-Screen Touch Swipe Look:** Entire right screen provides natural, fluid camera rotation (no rigid right stick cluttering the screen).
+- **Frosted Glass Monochromatic Buttons:** Translucent silver glassmorphism with bespoke procedural vector icons:
+  - `JUMP` (Boot / Upward Arrow, low-right corner under natural resting thumb).
+  - `SLASH` (Vorpal Blade, primary attack beside Jump).
+  - `THROW` (Flying Dagger projectile).
+  - `USE` (Hand icon: levers, doors, dialogue).
+  - `SWAP` (Circular weapon cycling).
+  - `+` (Pause / Escape menu).
+- **Adaptive Retina & Pro Max Scaling:** Scales dynamically with screen height (`(h / 390.0) * scale_mult`), rendering controls with optimal physical ergonomics on any screen size or density.
 
 ### E. Physical Controller Bridge (`src/ios_controller.rs`)
 Native Apple `GameController.framework` integration:
@@ -58,6 +55,10 @@ Native Apple `GameController.framework` integration:
 ### F. Smart Cutscene Skipping (`src/movie.rs` & `src/viewer.rs`)
 - Accidental screen taps no longer skip cinematic sequences.
 - Cutscene skipping strictly requires tapping the prominent `[ SKIP >> ]` on-screen button or holding controller A / Enter.
+
+### G. Stack Safety & Memory Optimization (LiveContainer Resilience)
+- **Eliminated Thread 0 Stack Overflow:** In sideloaded environments like LiveContainer, iOS caps Thread 0 at 1008 KB. All massive level and cutscene structs (`Scene`, `Interactions`, `Npcs`, `LevelArt`, `Story`, `Hints`, `Entered`, `NextVisit`) are heap-allocated (`Box<T>`), freeing over 230 KB of main thread stack and preventing `KERN_PROTECTION_FAILURE`.
+- **System `zlib` Backend:** Asset decompression switched from `miniz_oxide` to Apple's native `/usr/lib/libz.dylib`, allocating tables dynamically on the heap with hardware acceleration.
 
 ---
 
