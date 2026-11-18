@@ -48,6 +48,7 @@ pub struct AliceChapterInfo {
 extern "C" {
     fn AliceNativeMenu_Show(
         root_vc_ptr: *mut c_void,
+        is_pause: c_int,
         has_continue: c_int,
         continue_slot: c_int,
         continue_chapter: *const c_char,
@@ -67,6 +68,18 @@ extern "C" {
     fn AliceNativeMenu_GetResult() -> AliceMenuResult;
     #[allow(dead_code)]
     fn AliceNativeMenu_Dismiss();
+    fn AlicePerformanceHUD_SetVisible(visible: c_int);
+    fn AlicePerformanceHUD_IsVisible() -> c_int;
+}
+
+pub fn set_performance_hud_visible(visible: bool) {
+    unsafe {
+        AlicePerformanceHUD_SetVisible(if visible { 1 } else { 0 });
+    }
+}
+
+pub fn is_performance_hud_visible() -> bool {
+    unsafe { AlicePerformanceHUD_IsVisible() != 0 }
 }
 
 pub async fn choose(
@@ -174,12 +187,14 @@ pub async fn choose(
         })
         .collect();
 
-    let initial_metal_hud = if std::env::var("MTL_HUD_ENABLED").as_deref() == Ok("1") { 1 } else { 0 };
+    let launcher_settings = crate::launcher::LauncherSettings::load();
+    let initial_metal_hud = if launcher_settings.metal_hud || std::env::var("MTL_HUD_ENABLED").as_deref() == Ok("1") { 1 } else { 0 };
 
     // 4. Show UIKit Menu
     unsafe {
         AliceNativeMenu_Show(
             std::ptr::null_mut(),
+            0, // is_pause = 0 (Launch menu)
             if has_continue { 1 } else { 0 },
             continue_slot_idx as c_int,
             continue_chapter_c.as_ptr(),
@@ -281,5 +296,174 @@ pub async fn choose(
         }
         5 => Start::Quit,
         _ => Start::Quit,
+    }
+}
+
+pub async fn pause_menu(
+    preferences: &mut Preferences,
+    audio: &mut Audio,
+    store: &Store,
+    maps: &[String],
+    current: usize,
+    entry: Option<&str>,
+    options: &mut Options,
+    chapter_requested: &mut Option<crate::campaign::LevelChoice>,
+) -> crate::menu::Action {
+    let cur_map = maps.get(current).map(|s| s.as_str()).unwrap_or("gvillage");
+    let cur_title_str = format!("Текущая локация: {}", level_title(cur_map));
+    let cur_title_c = CString::new(cur_title_str).unwrap();
+
+    struct SlotData {
+        title: CString,
+        chapter: CString,
+        date: CString,
+        is_empty: bool,
+    }
+
+    let mut slots_data = Vec::with_capacity(Slot::ALL.len());
+    for slot in Slot::ALL {
+        let title_str = match slot {
+            Slot::One => "Слот 1",
+            Slot::Two => "Слот 2",
+            Slot::Three => "Слот 3",
+            Slot::Four => "Слот 4",
+            Slot::Quick => "Быстрое сохранение (Quick)",
+            Slot::Auto => "Автосохранение (Auto)",
+        };
+        let title = CString::new(title_str).unwrap();
+
+        match store.read(slot) {
+            Ok(loaded) => {
+                let lvl = loaded.game.level();
+                let ch_str = lvl.map_or("Неизвестно", |l| level_title(&l.map));
+                let chapter = CString::new(ch_str).unwrap();
+                let dt_str = timestamp(loaded.saved_at);
+                let date = CString::new(dt_str).unwrap();
+                slots_data.push(SlotData {
+                    title,
+                    chapter,
+                    date,
+                    is_empty: false,
+                });
+            }
+            Err(_) => {
+                let chapter = CString::new("Пусто").unwrap();
+                let date = CString::new("").unwrap();
+                slots_data.push(SlotData {
+                    title,
+                    chapter,
+                    date,
+                    is_empty: true,
+                });
+            }
+        }
+    }
+
+    let c_slots: Vec<AliceSaveSlotInfo> = slots_data
+        .iter()
+        .enumerate()
+        .map(|(idx, s)| AliceSaveSlotInfo {
+            slot_idx: idx as c_int,
+            slot_title: s.title.as_ptr(),
+            chapter_name: s.chapter.as_ptr(),
+            save_date: s.date.as_ptr(),
+            is_empty: if s.is_empty { 1 } else { 0 },
+        })
+        .collect();
+
+    struct ChapterData {
+        title: CString,
+        map_name: CString,
+    }
+
+    let mut chapters_data = Vec::with_capacity(maps.len());
+    for map in maps {
+        let title_str = level_title(map);
+        chapters_data.push(ChapterData {
+            title: CString::new(title_str).unwrap(),
+            map_name: CString::new(map.as_str()).unwrap(),
+        });
+    }
+
+    let c_chapters: Vec<AliceChapterInfo> = chapters_data
+        .iter()
+        .enumerate()
+        .map(|(idx, c)| AliceChapterInfo {
+            chapter_idx: idx as c_int,
+            title: c.title.as_ptr(),
+            map_name: c.map_name.as_ptr(),
+        })
+        .collect();
+
+    let launcher_settings = crate::launcher::LauncherSettings::load();
+    let initial_metal_hud = if launcher_settings.metal_hud || std::env::var("MTL_HUD_ENABLED").as_deref() == Ok("1") { 1 } else { 0 };
+
+    // 4. Show UIKit Menu in Pause mode (is_pause = 1)
+    unsafe {
+        AliceNativeMenu_Show(
+            std::ptr::null_mut(),
+            1, // is_pause = 1
+            0,
+            0,
+            cur_title_c.as_ptr(),
+            std::ptr::null(),
+            c_slots.as_ptr(),
+            c_slots.len() as c_int,
+            c_chapters.as_ptr(),
+            c_chapters.len() as c_int,
+            audio.settings.effects,
+            audio.settings.music,
+            audio.settings.effects,
+            preferences.sensitivity,
+            if preferences.invert_mouse { 1 } else { 0 },
+            initial_metal_hud,
+        );
+    }
+
+    // 5. Render loop while UIKit menu is open
+    // Note: we do NOT clear_background here, so the frozen 3D game frame remains blurred under frosted glass!
+    while unsafe { AliceNativeMenu_HasAction() } == 0 {
+        audio.update(0., Vec3::ZERO, 0., true, true);
+        next_frame().await;
+    }
+
+    let res = unsafe { AliceNativeMenu_GetResult() };
+
+    // Apply settings changes
+    audio.settings.effects = res.sound_vol.clamp(0.0, 1.0);
+    audio.settings.music = res.music_vol.clamp(0.0, 1.0);
+    preferences.sensitivity = res.look_sens;
+    preferences.invert_mouse = res.invert_y != 0;
+    preferences.invert_pad = res.invert_y != 0;
+
+    let mut launcher_settings = crate::launcher::LauncherSettings::load();
+    launcher_settings.metal_hud = res.metal_hud != 0;
+    launcher_settings.save();
+
+    for _ in 0..8 {
+        audio.update(0., Vec3::ZERO, 0., true, true);
+        next_frame().await;
+    }
+
+    match res.action {
+        6 => crate::menu::Action::Resume, // Resume
+        7 => crate::menu::Action::Save(Slot::Quick), // Quick Save into Slot::Quick
+        2 => {
+            // Load Game
+            let slot_idx = (res.save_slot as usize).min(Slot::ALL.len() - 1);
+            let slot = Slot::ALL[slot_idx];
+            crate::menu::Action::Load(slot)
+        }
+        3 => {
+            // Chapters
+            let ch_idx = (res.chapter_idx as usize).min(maps.len().saturating_sub(1));
+            let choices = crate::campaign::level_choices(maps);
+            if let Some(ch) = choices.into_iter().find(|c| c.map == ch_idx) {
+                *chapter_requested = Some(ch);
+            }
+            crate::menu::Action::Resume
+        }
+        5 => crate::menu::Action::Quit,
+        _ => crate::menu::Action::Resume,
     }
 }

@@ -25,6 +25,7 @@ typedef NS_ENUM(NSInteger, MenuPage) {
 
 // State data
 @property (nonatomic, assign) MenuPage currentPage;
+@property (nonatomic, assign) BOOL isPause;
 @property (nonatomic, assign) BOOL hasContinue;
 @property (nonatomic, assign) int continueSlot;
 @property (nonatomic, copy) NSString *continueChapter;
@@ -162,15 +163,37 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     CGFloat btnW = size.width;
 
     NSMutableArray *items = [NSMutableArray array];
-    if (self.hasContinue) {
-        NSString *sub = [NSString stringWithFormat:@"%@  ·  %@", self.continueChapter ?: @"", self.continueDate ?: @""];
-        [items addObject:@{@"t": @"Продолжить (Continue)", @"sub": sub, @"i": @"▶️", @"tag": @6, @"highlight": @YES}];
+
+    if (self.isPause) {
+        self.titleLabel.text = @"ПАУЗА";
+        if (self.continueChapter && self.continueChapter.length > 0) {
+            self.subtitleLabel.text = self.continueChapter;
+        } else {
+            self.subtitleLabel.text = @"ИГРА ПРИОСТАНОВЛЕНА";
+        }
+        self.backgroundColor = [UIColor colorWithRed:0.04 green:0.04 blue:0.06 alpha:0.80];
+
+        [items addObject:@{@"t": @"Возобновить (Resume)", @"i": @"▶️", @"tag": @6, @"highlight": @YES}];
+        [items addObject:@{@"t": @"Быстрое сохранение (Save)", @"i": @"💾", @"tag": @7, @"sub": @"Сохранить игру в Слот 1"}];
+        [items addObject:@{@"t": @"Загрузить сохранение (Load)", @"i": @"📂", @"tag": @2}];
+        [items addObject:@{@"t": @"Выбор главы (Chapters)", @"i": @"📖", @"tag": @3}];
+        [items addObject:@{@"t": @"Настройки (Settings)", @"i": @"⚙️", @"tag": @4}];
+        [items addObject:@{@"t": @"Главное меню (Quit to Menu)", @"i": @"🚪", @"tag": @5}];
+    } else {
+        self.titleLabel.text = @"AMERICAN McGEE'S ALICE";
+        self.subtitleLabel.text = @"LOOKINGMETAL · iOS NATIVE EDITION";
+        self.backgroundColor = [UIColor colorWithRed:0.04 green:0.04 blue:0.06 alpha:1.0];
+
+        if (self.hasContinue) {
+            NSString *sub = [NSString stringWithFormat:@"%@  ·  %@", self.continueChapter ?: @"", self.continueDate ?: @""];
+            [items addObject:@{@"t": @"Продолжить (Continue)", @"sub": sub, @"i": @"▶️", @"tag": @6, @"highlight": @YES}];
+        }
+        [items addObject:@{@"t": @"Новая игра (New Game)", @"i": @"⚔️", @"tag": @1}];
+        [items addObject:@{@"t": @"Загрузить (Load Game)", @"i": @"💾", @"tag": @2}];
+        [items addObject:@{@"t": @"Выбор главы (Chapters)", @"i": @"📖", @"tag": @3}];
+        [items addObject:@{@"t": @"Настройки (Settings)", @"i": @"⚙️", @"tag": @4}];
+        [items addObject:@{@"t": @"Выход в лаунчер (Quit)", @"i": @"🚪", @"tag": @5}];
     }
-    [items addObject:@{@"t": @"Новая игра (New Game)", @"i": @"⚔️", @"tag": @1}];
-    [items addObject:@{@"t": @"Загрузить (Load Game)", @"i": @"💾", @"tag": @2}];
-    [items addObject:@{@"t": @"Выбор главы (Chapters)", @"i": @"📖", @"tag": @3}];
-    [items addObject:@{@"t": @"Настройки (Settings)", @"i": @"⚙️", @"tag": @4}];
-    [items addObject:@{@"t": @"Выход в лаунчер (Quit)", @"i": @"🚪", @"tag": @5}];
 
     CGFloat btnH = items.count > 5 ? 42.0 : 46.0;
     CGFloat spacing = 6.0;
@@ -234,6 +257,13 @@ typedef NS_ENUM(NSInteger, MenuPage) {
         case 6: {
             s_result.action = AliceMenuActionContinue;
             s_result.save_slot = self.continueSlot;
+            s_has_action = 1;
+            [self dismissWithAnimation];
+            break;
+        }
+        case 7: {
+            s_result.action = AliceMenuActionSave;
+            s_result.save_slot = 0; // Slot 1
             s_has_action = 1;
             [self dismissWithAnimation];
             break;
@@ -727,6 +757,231 @@ void AliceApplyMetalHUD(void* mtkViewPtr) {
     }
 }
 
+@interface AlicePerformanceHUDView : UIView {
+    float _frameHistory[30];
+}
+@property (nonatomic, strong) UIVisualEffectView *blurView;
+@property (nonatomic, strong) UILabel *titleLabel;
+@property (nonatomic, strong) UILabel *fpsLabel;
+@property (nonatomic, strong) UILabel *msLabel;
+@property (nonatomic, strong) CADisplayLink *displayLink;
+@property (nonatomic, assign) CFTimeInterval lastTimestamp;
+@property (nonatomic, assign) int historyCount;
+@property (nonatomic, assign) int historyIndex;
+@property (nonatomic, assign) BOOL isMini;
+- (void)start;
+- (void)stop;
+@end
+
+@implementation AlicePerformanceHUDView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.layer.cornerRadius = 12.0;
+        self.layer.masksToBounds = YES;
+        self.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.18].CGColor;
+        self.layer.borderWidth = 0.5;
+
+        UIBlurEffect *blur = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+        _blurView = [[UIVisualEffectView alloc] initWithEffect:blur];
+        _blurView.frame = self.bounds;
+        _blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        [self addSubview:_blurView];
+
+        UIView *content = _blurView.contentView;
+
+        _titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 5, 122, 11)];
+        _titleLabel.text = @"⚡ METAL / PERF";
+        _titleLabel.textColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.25 alpha:0.95];
+        _titleLabel.font = [UIFont systemFontOfSize:9.0 weight:UIFontWeightBold];
+        [content addSubview:_titleLabel];
+
+        _fpsLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 16, 122, 22)];
+        _fpsLabel.text = @"60.0 FPS";
+        _fpsLabel.textColor = [UIColor colorWithRed:0.20 green:0.85 blue:0.40 alpha:1.0];
+        _fpsLabel.font = [UIFont monospacedDigitSystemFontOfSize:17.0 weight:UIFontWeightBold];
+        [content addSubview:_fpsLabel];
+
+        _msLabel = [[UILabel alloc] initWithFrame:CGRectMake(10, 37, 122, 12)];
+        _msLabel.text = @"16.6 ms · 60Hz";
+        _msLabel.textColor = [UIColor colorWithWhite:0.75 alpha:1.0];
+        _msLabel.font = [UIFont monospacedDigitSystemFontOfSize:10.0 weight:UIFontWeightMedium];
+        [content addSubview:_msLabel];
+
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(onTap:)];
+        [self addGestureRecognizer:tap];
+
+        UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(onPan:)];
+        [self addGestureRecognizer:pan];
+    }
+    return self;
+}
+
+- (void)onTap:(UITapGestureRecognizer *)tap {
+    self.isMini = !self.isMini;
+    [UIView animateWithDuration:0.2 animations:^{
+        CGRect f = self.frame;
+        if (self.isMini) {
+            f.size = CGSizeMake(84, 28);
+            self.titleLabel.hidden = YES;
+            self.msLabel.hidden = YES;
+            self.fpsLabel.frame = CGRectMake(8, 4, 68, 20);
+            self.fpsLabel.font = [UIFont monospacedDigitSystemFontOfSize:13.5 weight:UIFontWeightBold];
+        } else {
+            f.size = CGSizeMake(142, 54);
+            self.titleLabel.hidden = NO;
+            self.msLabel.hidden = NO;
+            self.fpsLabel.frame = CGRectMake(10, 16, 122, 22);
+            self.fpsLabel.font = [UIFont monospacedDigitSystemFontOfSize:17.0 weight:UIFontWeightBold];
+        }
+        self.frame = f;
+    }];
+}
+
+- (void)onPan:(UIPanGestureRecognizer *)pan {
+    CGPoint trans = [pan translationInView:self.superview];
+    CGPoint c = self.center;
+    c.x += trans.x;
+    c.y += trans.y;
+
+    if (self.superview) {
+        UIEdgeInsets insets = UIEdgeInsetsZero;
+        if (@available(iOS 11.0, *)) {
+            insets = self.superview.safeAreaInsets;
+        }
+        CGFloat halfW = self.bounds.size.width / 2.0;
+        CGFloat halfH = self.bounds.size.height / 2.0;
+        CGFloat minX = insets.left + halfW + 4;
+        CGFloat maxX = self.superview.bounds.size.width - insets.right - halfW - 4;
+        CGFloat minY = insets.top + halfH + 4;
+        CGFloat maxY = self.superview.bounds.size.height - insets.bottom - halfH - 4;
+        c.x = MAX(minX, MIN(maxX, c.x));
+        c.y = MAX(minY, MIN(maxY, c.y));
+    }
+    self.center = c;
+    [pan setTranslation:CGPointZero inView:self.superview];
+}
+
+- (void)start {
+    if (self.displayLink) return;
+    self.lastTimestamp = 0;
+    self.historyCount = 0;
+    self.historyIndex = 0;
+    self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
+    if (@available(iOS 15.0, *)) {
+        self.displayLink.preferredFrameRateRange = CAFrameRateRangeMake(30, 120, 120);
+    }
+    [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+}
+
+- (void)stop {
+    [self.displayLink invalidate];
+    self.displayLink = nil;
+}
+
+- (void)tick:(CADisplayLink *)link {
+    if (self.lastTimestamp == 0) {
+        self.lastTimestamp = link.timestamp;
+        return;
+    }
+    CFTimeInterval dt = link.timestamp - self.lastTimestamp;
+    self.lastTimestamp = link.timestamp;
+    if (dt <= 0.001 || dt > 0.5) return;
+
+    _frameHistory[self.historyIndex] = (float)dt;
+    self.historyIndex = (self.historyIndex + 1) % 30;
+    if (self.historyCount < 30) self.historyCount++;
+
+    float sum = 0;
+    for (int i = 0; i < self.historyCount; i++) {
+        sum += _frameHistory[i];
+    }
+    float avgDt = sum / (float)self.historyCount;
+    float fps = 1.0f / avgDt;
+    float ms = avgDt * 1000.0f;
+
+    NSInteger maxFps = 60;
+    if (@available(iOS 10.3, *)) {
+        maxFps = [UIScreen mainScreen].maximumFramesPerSecond;
+    }
+
+    if (self.isMini) {
+        self.fpsLabel.text = [NSString stringWithFormat:@"%.0f FPS", fps];
+    } else {
+        self.fpsLabel.text = [NSString stringWithFormat:@"%.1f FPS", fps];
+        self.msLabel.text = [NSString stringWithFormat:@"%.1f ms · %ldHz", ms, (long)maxFps];
+    }
+
+    if (fps >= (float)maxFps * 0.90f) {
+        self.fpsLabel.textColor = [UIColor colorWithRed:0.20 green:0.85 blue:0.40 alpha:1.0];
+    } else if (fps >= 45.0f) {
+        self.fpsLabel.textColor = [UIColor colorWithRed:1.0 green:0.84 blue:0.25 alpha:1.0];
+    } else {
+        self.fpsLabel.textColor = [UIColor colorWithRed:1.0 green:0.30 blue:0.25 alpha:1.0];
+    }
+}
+
+@end
+
+static AlicePerformanceHUDView *s_hud_view = nil;
+
+void AlicePerformanceHUD_SetVisible(int visible) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *window = nil;
+        if (@available(iOS 13.0, *)) {
+            for (UIScene *scene in [UIApplication sharedApplication].connectedScenes) {
+                if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:[UIWindowScene class]]) {
+                    window = ((UIWindowScene *)scene).windows.firstObject;
+                    break;
+                }
+            }
+        }
+        if (!window) window = [UIApplication sharedApplication].keyWindow;
+        if (!window && [UIApplication sharedApplication].windows.count > 0) {
+            window = [UIApplication sharedApplication].windows[0];
+        }
+        if (!window) return;
+
+        if (visible) {
+            if (!s_hud_view) {
+                UIEdgeInsets insets = UIEdgeInsetsZero;
+                if (@available(iOS 11.0, *)) {
+                    insets = window.safeAreaInsets;
+                }
+                CGFloat w = 142.0;
+                CGFloat h = 54.0;
+                CGFloat x = insets.left + 16.0;
+                CGFloat y = insets.top + 8.0;
+                s_hud_view = [[AlicePerformanceHUDView alloc] initWithFrame:CGRectMake(x, y, w, h)];
+                [window addSubview:s_hud_view];
+            }
+            s_hud_view.hidden = NO;
+            s_hud_view.alpha = 0.0;
+            [s_hud_view start];
+            [window bringSubviewToFront:s_hud_view];
+            [UIView animateWithDuration:0.25 animations:^{
+                s_hud_view.alpha = 1.0;
+            }];
+            AliceLog(@"[LookingMetal] Performance HUD view shown");
+        } else {
+            if (s_hud_view) {
+                [UIView animateWithDuration:0.2 animations:^{
+                    s_hud_view.alpha = 0.0;
+                } completion:^(BOOL finished) {
+                    s_hud_view.hidden = YES;
+                    [s_hud_view stop];
+                }];
+                AliceLog(@"[LookingMetal] Performance HUD view hidden");
+            }
+        }
+    });
+}
+
+int AlicePerformanceHUD_IsVisible(void) {
+    return (s_hud_view && !s_hud_view.hidden && s_hud_view.alpha > 0.01) ? 1 : 0;
+}
+
 static int s_last_hud_state = -1;
 void AliceOnFrameDrawable(void* drawablePtr) {
     if (!drawablePtr) return;
@@ -755,6 +1010,7 @@ void AliceNativeMenu_SetMetalHUD(int enabled) {
     setenv("MTL_HUD_ENABLED", enabled ? "1" : "0", 1);
     s_last_hud_state = -1;
 
+    AlicePerformanceHUD_SetVisible(enabled);
     AliceLog(@"[LookingMetal] AliceNativeMenu_SetMetalHUD: enabled=%d", enabled);
 
     if (@available(iOS 16.0, *)) {
@@ -797,6 +1053,7 @@ UIViewController* AliceGetRootViewController(void* hint) {
 }
 
 void AliceNativeMenu_Show(void* root_vc_ptr,
+                          int is_pause,
                           int has_continue, int continue_slot,
                           const char* continue_chapter, const char* continue_date,
                           const AliceSaveSlotInfo* slots, int slot_count,
@@ -825,6 +1082,7 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
         s_has_action = 0;
 
         AliceNativeMenuView *menu = [[AliceNativeMenuView alloc] initWithFrame:rootVC.view.bounds];
+        menu.isPause = (is_pause != 0);
         menu.soundVol = sound_vol;
         menu.musicVol = music_vol;
         menu.voiceVol = voice_vol;
@@ -838,8 +1096,8 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
         menu.continueChapter = continue_chapter ? [NSString stringWithUTF8String:continue_chapter] : @"";
         menu.continueDate = continue_date ? [NSString stringWithUTF8String:continue_date] : @"";
 
-        if (menu.metalHUD) {
-            AliceNativeMenu_SetMetalHUD(1);
+        if (menu.metalHUD || AliceIsMetalHUDRequested()) {
+            AlicePerformanceHUD_SetVisible(1);
         }
 
         // Slots

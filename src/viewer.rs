@@ -565,6 +565,9 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
         {
             // Default to 120 FPS on iOS ProMotion displays
             macroquad::miniquad::native::ios::set_preferred_frames_per_second(120);
+            if launcher_settings.metal_hud || std::env::var("MTL_HUD_ENABLED").as_deref() == Ok("1") {
+                crate::ios_menu::set_performance_hud_visible(true);
+            }
         }
     }
 
@@ -969,6 +972,18 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
             // Consume Escape before entering the separate modal frame loop. No
             // physics, story, enemies, power-up timers or world clocks run there.
             next_frame().await;
+            #[cfg(target_os = "ios")]
+            let action = crate::ios_menu::pause_menu(
+                &mut preferences,
+                &mut audio,
+                &store,
+                &maps,
+                current,
+                entry_spawn.as_deref(),
+                &mut options,
+                &mut chapter_requested,
+            ).await;
+            #[cfg(not(target_os = "ios"))]
             let action = escape_menu
                 .run(&mut preferences, &mut audio, &store, pos, yaw, &mut input)
                 .await;
@@ -990,9 +1005,17 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                 }
                 Action::Resume => {
                     paused = false;
+                    #[cfg(target_os = "ios")]
+                    escape_menu.close();
                 }
                 Action::Quit => break,
                 Action::Chapters => {
+                    #[cfg(target_os = "ios")]
+                    {
+                        escape_menu.close();
+                        paused = false;
+                    }
+                    #[cfg(not(target_os = "ios"))]
                     match escape_menu.choose_chapter(&maps, current, entry_spawn.as_deref(),
                         &mut options.difficulty, &preferences, &mut audio, &mut input).await {
                         crate::menu::ChapterChoice::Begin(choice) => {
@@ -1004,7 +1027,7 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                     }
                 }
                 Action::Save(slot) => {
-                    escape_menu.message = if !saves_enabled {
+                    let msg = if !saves_enabled {
                         "Saving is unavailable in a staged preview".into()
                     } else if !stats.alive() {
                         "Retry or load a game before saving".into()
@@ -1022,6 +1045,13 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                             Err(e) => format!("Save failed: {e:#}"),
                         }
                     };
+                    escape_menu.message = msg.clone();
+                    hud.announce(&msg);
+                    #[cfg(target_os = "ios")]
+                    {
+                        escape_menu.close();
+                        paused = false;
+                    }
                 }
                 Action::Load(slot) => {
                     if saves_enabled {
@@ -1030,8 +1060,15 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                             .and_then(|loaded| save::Restored::build(&mut assets, loaded.game))
                         {
                             Ok(restored) => {
-                                apply_loaded!(restored);
+                                let pause_on_restore = if cfg!(target_os = "ios") { false } else { true };
+                                apply_loaded!(restored, pause_on_restore);
                                 escape_menu.close();
+                                #[cfg(target_os = "ios")]
+                                {
+                                    paused = false;
+                                    hud.announce("Game restored");
+                                }
+                                #[cfg(not(target_os = "ios"))]
                                 hud.announce("Game restored / P or click to resume");
                             }
                             Err(e) => escape_menu.message = format!("Load failed: {e:#}"),
@@ -1360,14 +1397,25 @@ async fn run_impl(mut assets: Assets, mut options: Options) -> Result<()> {
                     save::Restored::build(&mut assets, loaded.game).map(|r| (r, backup))
                 }) {
                     Ok((restored, backup)) => {
-                        apply_loaded!(restored);
-                        let message = if backup {
-                            "Previous save restored / P or click to resume"
-                        } else {
-                            "Game restored / P or click to resume"
-                        };
-                        hud.announce(message);
-                        console.print(message);
+                        let pause_on_restore = if cfg!(target_os = "ios") { false } else { true };
+                        apply_loaded!(restored, pause_on_restore);
+                        #[cfg(target_os = "ios")]
+                        {
+                            paused = false;
+                            let message = if backup { "Previous save restored" } else { "Game restored" };
+                            hud.announce(message);
+                            console.print(message);
+                        }
+                        #[cfg(not(target_os = "ios"))]
+                        {
+                            let message = if backup {
+                                "Previous save restored / P or click to resume"
+                            } else {
+                                "Game restored / P or click to resume"
+                            };
+                            hud.announce(message);
+                            console.print(message);
+                        }
                     }
                     Err(e) => {
                         clock.pause();

@@ -12,7 +12,8 @@ typedef enum {
     AliceMenuActionChapters = 3,
     AliceMenuActionSettings = 4,
     AliceMenuActionQuit = 5,
-    AliceMenuActionContinue = 6,
+    AliceMenuActionContinue = 6, // Resume in pause menu
+    AliceMenuActionSave = 7,     // Save game in pause menu
 } AliceMenuAction;
 
 typedef struct {
@@ -43,6 +44,7 @@ typedef struct {
 } AliceChapterInfo;
 
 void AliceNativeMenu_Show(void* root_vc_ptr,
+                          int is_pause,
                           int has_continue, int continue_slot,
                           const char* continue_chapter, const char* continue_date,
                           const AliceSaveSlotInfo* slots, int slot_count,
@@ -54,6 +56,8 @@ int AliceNativeMenu_HasAction(void);
 AliceMenuResult AliceNativeMenu_GetResult(void);
 void AliceNativeMenu_Dismiss(void);
 void AliceNativeMenu_SetMetalHUD(int enabled);
+void AlicePerformanceHUD_SetVisible(int visible);
+int AlicePerformanceHUD_IsVisible(void);
 void AlicePreMetalInit(void);
 void AliceApplyMetalHUD(void* mtkViewPtr);
 void AliceOnFrameDrawable(void* drawablePtr);
