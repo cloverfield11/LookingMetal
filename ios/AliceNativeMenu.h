@@ -27,6 +27,8 @@ typedef struct {
     float look_sens;
     int invert_y;
     int metal_hud;
+    int fps_choice;   // 0 = 30 FPS, 1 = 60 FPS, 2 = 120 FPS
+    int touch_scale;  // 0 = Standard, 1 = Compact, 2 = Large
 } AliceMenuResult;
 
 typedef struct {
@@ -50,12 +52,14 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
                           const AliceSaveSlotInfo* slots, int slot_count,
                           const AliceChapterInfo* chapters, int chapter_count,
                           float sound_vol, float music_vol, float voice_vol,
-                          float look_sens, int invert_y, int metal_hud);
+                          float look_sens, int invert_y, int metal_hud,
+                          int fps_choice, int touch_scale);
 
 int AliceNativeMenu_HasAction(void);
 AliceMenuResult AliceNativeMenu_GetResult(void);
 void AliceNativeMenu_Dismiss(void);
 void AliceNativeMenu_SetMetalHUD(int enabled);
+void AliceApplyFPSLimit(int fps);
 void AlicePerformanceHUD_SetVisible(int visible);
 int AlicePerformanceHUD_IsVisible(void);
 void AlicePreMetalInit(void);

@@ -429,6 +429,11 @@ pub extern "C" fn miniquad_ios_mtk_view() -> *mut std::ffi::c_void {
     unsafe { ACTIVE_MTK_VIEW as *mut _ }
 }
 
+#[no_mangle]
+pub extern "C" fn miniquad_ios_set_preferred_fps(fps: i32) {
+    set_preferred_frames_per_second(fps);
+}
+
 /// Select an iOS display rate from the app thread. Unsupported rates are
 /// normalized to Apple's documented 30/60/120 values.
 pub fn set_preferred_frames_per_second(frames: i32) {
