@@ -1407,27 +1407,31 @@ impl RenderingBackend for MetalContext {
         self.close_lingering();
         unsafe {
             assert!(!self.command_queue.is_null());
-            let drawable: ObjcId = msg_send!(self.view, currentDrawable);
+            if let Some(cmd_buf) = self.command_buffer.take() {
+                let drawable: ObjcId = msg_send!(self.view, currentDrawable);
 
-            #[cfg(target_os = "ios")]
-            if !drawable.is_null() {
-                extern "C" {
-                    fn AliceOnFrameDrawable(drawable: *mut std::ffi::c_void);
+                #[cfg(target_os = "ios")]
+                if !drawable.is_null() {
+                    extern "C" {
+                        fn AliceOnFrameDrawable(drawable: *mut std::ffi::c_void);
+                    }
+                    AliceOnFrameDrawable(drawable as *mut _);
                 }
-                AliceOnFrameDrawable(drawable as *mut _);
-            }
 
-            //msg_send_![drawable, retain];
-            msg_send_![self.command_buffer.unwrap(), presentDrawable: drawable];
-            msg_send_![self.command_buffer.unwrap(), commit];
-            msg_send_![self.command_buffer.unwrap(), waitUntilCompleted];
+                if !drawable.is_null() {
+                    msg_send_![cmd_buf, presentDrawable: drawable];
+                }
+                msg_send_![cmd_buf, commit];
+                #[cfg(not(target_os = "ios"))]
+                msg_send_![cmd_buf, waitUntilCompleted];
+            }
         }
+        #[cfg(not(target_os = "ios"))]
         for buffer in &mut self.buffers {
             buffer.next_value = 0;
         }
         self.current_ub_offset = 0;
         self.current_pipeline = None;
-        self.command_buffer = None;
         self.current_frame_index = (self.current_frame_index + 1) % NUM_INFLIGHT_FRAMES;
     }
 }

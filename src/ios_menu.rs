@@ -99,7 +99,7 @@ pub async fn choose(
     let (continue_slot_idx, continue_chapter_c, continue_date_c) = if let Some((slot, ref loaded)) = latest_save {
         let slot_idx = Slot::ALL.iter().position(|&s| s == slot).unwrap_or(0);
         let lvl = loaded.game.level();
-        let ch_str = lvl.map_or("Неизвестно", |l| level_title(&l.map));
+        let ch_str = lvl.map_or("Unknown", |l| level_title(&l.map));
         let dt_str = timestamp(loaded.saved_at);
         (slot_idx, CString::new(ch_str).unwrap(), CString::new(dt_str).unwrap())
     } else {
@@ -117,19 +117,19 @@ pub async fn choose(
     let mut slots_data = Vec::with_capacity(Slot::ALL.len());
     for slot in Slot::ALL {
         let title_str = match slot {
-            Slot::One => "Слот 1",
-            Slot::Two => "Слот 2",
-            Slot::Three => "Слот 3",
-            Slot::Four => "Слот 4",
-            Slot::Quick => "Быстрое сохранение (Quick)",
-            Slot::Auto => "Автосохранение (Auto)",
+            Slot::One => "Slot 1",
+            Slot::Two => "Slot 2",
+            Slot::Three => "Slot 3",
+            Slot::Four => "Slot 4",
+            Slot::Quick => "Quick Save",
+            Slot::Auto => "Autosave",
         };
         let title = CString::new(title_str).unwrap();
 
         match store.read(slot) {
             Ok(loaded) => {
                 let lvl = loaded.game.level();
-                let ch_str = lvl.map_or("Неизвестно", |l| level_title(&l.map));
+                let ch_str = lvl.map_or("Unknown", |l| level_title(&l.map));
                 let chapter = CString::new(ch_str).unwrap();
                 let dt_str = timestamp(loaded.saved_at);
                 let date = CString::new(dt_str).unwrap();
@@ -141,7 +141,7 @@ pub async fn choose(
                 });
             }
             Err(_) => {
-                let chapter = CString::new("Пусто").unwrap();
+                let chapter = CString::new("Empty").unwrap();
                 let date = CString::new("").unwrap();
                 slots_data.push(SlotData {
                     title,
@@ -313,7 +313,7 @@ pub async fn pause_menu(
     chapter_requested: &mut Option<crate::campaign::LevelChoice>,
 ) -> crate::menu::Action {
     let cur_map = maps.get(current).map(|s| s.as_str()).unwrap_or("gvillage");
-    let cur_title_str = format!("Текущая локация: {}", level_title(cur_map));
+    let cur_title_str = format!("Current Location: {}", level_title(cur_map));
     let cur_title_c = CString::new(cur_title_str).unwrap();
 
     struct SlotData {
@@ -326,19 +326,19 @@ pub async fn pause_menu(
     let mut slots_data = Vec::with_capacity(Slot::ALL.len());
     for slot in Slot::ALL {
         let title_str = match slot {
-            Slot::One => "Слот 1",
-            Slot::Two => "Слот 2",
-            Slot::Three => "Слот 3",
-            Slot::Four => "Слот 4",
-            Slot::Quick => "Быстрое сохранение (Quick)",
-            Slot::Auto => "Автосохранение (Auto)",
+            Slot::One => "Slot 1",
+            Slot::Two => "Slot 2",
+            Slot::Three => "Slot 3",
+            Slot::Four => "Slot 4",
+            Slot::Quick => "Quick Save",
+            Slot::Auto => "Autosave",
         };
         let title = CString::new(title_str).unwrap();
 
         match store.read(slot) {
             Ok(loaded) => {
                 let lvl = loaded.game.level();
-                let ch_str = lvl.map_or("Неизвестно", |l| level_title(&l.map));
+                let ch_str = lvl.map_or("Unknown", |l| level_title(&l.map));
                 let chapter = CString::new(ch_str).unwrap();
                 let dt_str = timestamp(loaded.saved_at);
                 let date = CString::new(dt_str).unwrap();
@@ -350,7 +350,7 @@ pub async fn pause_menu(
                 });
             }
             Err(_) => {
-                let chapter = CString::new("Пусто").unwrap();
+                let chapter = CString::new("Empty").unwrap();
                 let date = CString::new("").unwrap();
                 slots_data.push(SlotData {
                     title,

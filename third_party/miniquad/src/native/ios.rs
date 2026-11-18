@@ -513,18 +513,24 @@ unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, high_dpi: b
 
     msg_send_![view_ctrl_obj, setView: mtk_view_obj];
 
-    let main_screen: ObjcId = msg_send![class!(UIScreen), mainScreen];
-    let native_scale: f64 = msg_send![main_screen, nativeScale];
     let scale = if high_dpi {
-        if native_scale > 0.0 { native_scale } else { 2.0 }
+        extern "C" {
+            fn AliceGetRenderScale() -> f32;
+        }
+        let s = AliceGetRenderScale() as f64;
+        if s > 0.0 { s } else { 2.0 }
     } else {
         1.0
     };
     msg_send_![mtk_view_obj, setContentScaleFactor: scale];
 
-    msg_send_![mtk_view_obj, setEnableSetNeedsDisplay: YES];
-    msg_send_![mtk_view_obj, setPaused: YES];
-    msg_send_![mtk_view_obj, setPreferredFramesPerSecond:120];
+    // Enable CADisplayLink hardware VSync pacing:
+    // With setPaused: NO and setEnableSetNeedsDisplay: NO, MTKView automatically drives
+    // the render loop at the display's native refresh rate (up to 120Hz ProMotion).
+    // This eliminates background thread timer jitter and the sawtooth comb pattern.
+    msg_send_![mtk_view_obj, setEnableSetNeedsDisplay: NO];
+    msg_send_![mtk_view_obj, setPaused: NO];
+    msg_send_![mtk_view_obj, setPreferredFramesPerSecond: 120];
     msg_send_![mtk_view_obj, setDelegate: mtk_view_dlg_obj];
 
     extern "C" {
@@ -732,11 +738,6 @@ pub fn define_app_delegate() -> *const Class {
                     if !conf.platform.blocking_event_loop || update_requested {
                         match conf.platform.apple_gfx_api {
                             AppleGfxApi::OpenGl => {
-                                // Why it differs from Metal? I don't realy know. Looks like a bug.
-                                // Somehow it needs `setNeedsDisplay` to redraw after touch.
-                                // With plain `display` it draws only after another touch.
-                                // But when it's not blocking_event_loop it makes fps really drop with `setNeedsDisplay`.
-                                // I hope it will work the same on the real device.
                                 if conf.platform.blocking_event_loop {
                                     msg_send_![&*view, performSelectorOnMainThread:sel!(setNeedsDisplay) withObject:nil waitUntilDone:NO];
                                 } else {
@@ -744,12 +745,13 @@ pub fn define_app_delegate() -> *const Class {
                                 }
                             }
                             AppleGfxApi::Metal => {
-                                msg_send_![&*view, performSelectorOnMainThread:sel!(setNeedsDisplay) withObject:nil waitUntilDone:NO];
+                                // For Metal, MTKView's internal CADisplayLink calls drawInMTKView:
+                                // at hardware VSync rate. Avoid jittery background setNeedsDisplay posts.
                             }
                         }
                     }
 
-                    thread::sleep(std::time::Duration::from_millis(1));
+                    thread::sleep(std::time::Duration::from_millis(4));
                 }
             });
         }

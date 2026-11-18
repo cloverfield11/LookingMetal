@@ -62,6 +62,7 @@ int AlicePerformanceHUD_IsVisible(void);
 void AlicePreMetalInit(void);
 void AliceApplyMetalHUD(void* mtkViewPtr);
 void AliceOnFrameDrawable(void* drawablePtr);
+float AliceGetRenderScale(void);
 
 #ifdef __cplusplus
 }
