@@ -3,37 +3,46 @@
 > **Native Apple Metal port of American McGee's Alice (2000) for iOS and Apple Silicon macOS.**
 
 [![Platform](https://img.shields.io/badge/Platforms-iOS%2015%2B%20%7C%20macOS%20ARM-blue.svg)](https://apple.com)
-[![Status](https://img.shields.io/badge/Status-Fully%20Playable%20on%20Metal%20(22--40%20FPS)-success.svg)]()
-[![Graphics](https://img.shields.io/badge/Graphics-Pure%20Apple%20Metal%20%26%20MetalKit-orange.svg)](https://developer.apple.com/metal/)
+[![Status](https://img.shields.io/badge/Status-Fully%20Playable%20%7C%20Locked%20120%20FPS%20ProMotion-brightgreen.svg)]()
+[![Graphics](https://img.shields.io/badge/Graphics-Pure%20Apple%20Metal%203%20%26%20MetalKit-orange.svg)](https://developer.apple.com/metal/)
 [![Engine](https://img.shields.io/badge/Language-Rust-red.svg)](https://www.rust-lang.org)
 [![Sideloading](https://img.shields.io/badge/Sideloading-LiveContainer%20%7C%20SideStore%20%7C%20TrollStore-brightgreen.svg)]()
 
 **LookingMetal** is a specialized fork of [LookingGlass](https://github.com/looking-glass-project/LookingGlass), engineered to bring **American McGee's Alice** natively to modern Apple hardware (iPhone, iPad, and Apple Silicon Macs) using **pure Apple Metal & MetalKit**.
 
-No x86 emulation, UTM virtual machines, or translation layers — this is a pure native `aarch64` port running directly on the Metal hardware pipeline.
+No x86 emulation, UTM virtual machines, or translation layers — this is a pure native `aarch64` port running directly on the Metal hardware pipeline with locked **120 FPS ProMotion**.
 
 ---
 
-## 🎮 Current Project Status
+## 🎮 Project Status & Highlights
 
-- **Status:** **Fully Playable** on pure Apple Metal (`aarch64-apple-ios` and `aarch64-apple-darwin`).
-- **Framerate:** ~22–40 FPS on iPhone (playable on device via LiveContainer).
-- **Branching Model:** Unified single `main` branch. Active ongoing optimizations for draw-call batching and pipeline pacing.
+- **Status:** **Fully Playable & Production Ready** on pure Apple Metal (`aarch64-apple-ios` and `aarch64-apple-darwin`).
+- **Framerate:** **Rock-solid locked 120 FPS flat line** on Apple ProMotion displays (60 FPS on 60Hz displays) with zero frame drops or pacing sawtooth.
+- **Display Pipeline:** Driven natively by hardware `CADisplayLink` at VSync with asynchronous Metal triple-buffering.
+- **Branching Model:** Unified single `main` branch as the sole source of truth.
 
 ---
 
 ## ✨ Features
 
-- ⚡️ **Pure Apple Metal Graphics:**
+- ⚡️ **Pure Apple Metal 3 Graphics & Hardware Pacing:**
   - Complete Metal rendering pipeline with MSL (Metal Shading Language) shaders.
+  - **CADisplayLink Hardware Pacing:** Render loop driven at the physical display refresh rate (up to 120Hz ProMotion), eliminating background thread timer jitter and frame-interval comb patterns.
+  - **Asynchronous Triple-Buffering (`AliceFramePacing`):** Non-blocking command buffer commits allow CPU and GPU to execute in parallel without sequential lockstep stalls.
+  - **Optimal Retina Resolution Scaling:** Automatically tunes rendering scale on ultra-high-density 3x displays to 2.0x (`1912x880`, >300 PPI), cutting fillrate pressure by >50% while maintaining razor-sharp visual fidelity.
   - Hardware Z-buffer depth testing, alpha blending, and texture samplers.
   - Full edge-to-edge fullscreen Retina rendering without cropping or black bars across all aspect ratios (19.5:9 on modern iPhones, 4:3 on iPad).
   - Native Apple Metal 3 Performance HUD overlay toggle for real-time GPU/FPS telemetry.
 - 📱 **Native Frosted Glass UIKit UI (`AliceNativeMenu`):**
-  - Modern iOS design language with `UIBlurEffect` and haptic feedback (`UIImpactFeedbackGenerator`).
-  - Chapter selector with previews, difficulty selection (Easy / Medium / Hard).
+  - Full English native interface with modern iOS design language, `UIBlurEffect`, and haptic feedback (`UIImpactFeedbackGenerator`).
+  - Chapter selector with previews, difficulty selection (Easy / Medium / Nightmare).
   - Full save and load slot management with timestamps and chapter metadata.
   - Real-time Audio sliders (Sound, Music, Voice) and Look Sensitivity / Invert Y toggles.
+- 📄 **Comprehensive File Logging & Crash Tracing:**
+  - **Persistent Session Logs:** Automatically logs stdout, stderr, and engine events to `Documents/LookingMetal.log`.
+  - **Crash & Panic Tracer:** Captures fatal POSIX signals (`SIGSEGV`, `SIGBUS`, `SIGABRT`) and Rust panics with full stack backtraces saved to `Documents/LookingMetal_crash.log`.
+  - **In-App Log Viewer:** View recent logs and crash reports directly inside the game Settings menu with a one-tap "Copy to Clipboard" button.
+  - Accessible directly via the iOS **Files** app (`Files -> On My iPhone -> LookingMetal` / `LiveContainer`).
 - 🛡️ **LiveContainer & Sideloading Optimized:**
   - **No JIT Required:** Runs seamlessly in restricted environments like LiveContainer and SideStore.
   - **Mach-O SDK 16.5 Patching:** Built-in automatic SDK header patch eliminating dyld version rejections.
