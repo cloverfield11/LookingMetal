@@ -535,20 +535,27 @@ typedef NS_ENUM(NSInteger, MenuPage) {
     y += rowH;
 
     // 6. Metal Performance HUD
-    UIView *hudRow = [[UIView alloc] initWithFrame:CGRectMake(0, y, size.width, rowH)];
-    UILabel *hl = [[UILabel alloc] initWithFrame:CGRectMake(4, 0, size.width - 70, rowH)];
-    hl.text = @"📊 Metal Performance HUD (FPS / GPU / Frame Time)";
+    CGFloat hudRowH = 50.0;
+    UIView *hudRow = [[UIView alloc] initWithFrame:CGRectMake(0, y, size.width, hudRowH)];
+    UILabel *hl = [[UILabel alloc] initWithFrame:CGRectMake(4, 2, size.width - 70, 22)];
+    hl.text = @"📊 Metal Performance HUD (FPS / GPU)";
     hl.textColor = [UIColor colorWithRed:0.70 green:0.95 blue:0.80 alpha:1.0];
-    hl.font = [UIFont systemFontOfSize:13.5 weight:UIFontWeightMedium];
+    hl.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightMedium];
     [hudRow addSubview:hl];
 
-    UISwitch *hudSw = [[UISwitch alloc] initWithFrame:CGRectMake(size.width - 55, 5, 51, 31)];
+    UILabel *subHl = [[UILabel alloc] initWithFrame:CGRectMake(4, 24, size.width - 70, 18)];
+    subHl.text = @"Apple Metal 3 HUD · трекает кадры и GPU в реальном времени";
+    subHl.textColor = [UIColor colorWithWhite:0.65 alpha:1.0];
+    subHl.font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightRegular];
+    [hudRow addSubview:subHl];
+
+    UISwitch *hudSw = [[UISwitch alloc] initWithFrame:CGRectMake(size.width - 55, 8, 51, 31)];
     hudSw.on = self.metalHUD;
     hudSw.onTintColor = [UIColor colorWithRed:0.20 green:0.75 blue:0.45 alpha:1.0];
     [hudSw addTarget:self action:@selector(onMetalHUDToggle:) forControlEvents:UIControlEventValueChanged];
     [hudRow addSubview:hudSw];
     [scroll addSubview:hudRow];
-    y += rowH;
+    y += hudRowH;
 
     scroll.contentSize = CGSizeMake(size.width, y + 10.0);
 }
@@ -625,21 +632,76 @@ void* AliceGetMTKView(void) {
     return NULL;
 }
 
+static CAMetalLayer* AliceFindMetalLayer(UIView *v) {
+    if (!v) return nil;
+    if ([v.layer isKindOfClass:[CAMetalLayer class]]) {
+        return (CAMetalLayer*)v.layer;
+    }
+    for (CALayer *sub in v.layer.sublayers) {
+        if ([sub isKindOfClass:[CAMetalLayer class]]) {
+            return (CAMetalLayer*)sub;
+        }
+    }
+    for (UIView *child in v.subviews) {
+        CAMetalLayer *found = AliceFindMetalLayer(child);
+        if (found) return found;
+    }
+    return nil;
+}
+
+__attribute__((constructor)) static void alice_hud_prelaunch(void) {
+    BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"MetalHUDEnabled"];
+    const char *e = getenv("DM_METAL_HUD");
+    if (e && atoi(e)) enabled = YES;
+    const char *m = getenv("MTL_HUD_ENABLED");
+    if (m && atoi(m)) enabled = YES;
+
+    if (enabled) {
+        setenv("MTL_HUD_ENABLED", "1", 1);
+        setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
+        NSLog(@"[LookingMetal] __attribute__((constructor)): MTL_HUD_ENABLED=1 set before Metal device creation!");
+    }
+}
+
+void AliceApplyMetalHUD(void* mtkViewPtr) {
+    BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"MetalHUDEnabled"];
+    const char *e = getenv("DM_METAL_HUD");
+    if (e && atoi(e)) enabled = YES;
+    const char *m = getenv("MTL_HUD_ENABLED");
+    if (m && atoi(m)) enabled = YES;
+
+    if (!enabled) return;
+
+    setenv("MTL_HUD_ENABLED", "1", 1);
+    setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
+
+    if (@available(iOS 16.0, *)) {
+        UIView *view = (__bridge UIView*)mtkViewPtr;
+        CAMetalLayer *metalLayer = AliceFindMetalLayer(view);
+        if (metalLayer) {
+            metalLayer.developerHUDProperties = @{@"mode": @"default"};
+            NSLog(@"[LookingMetal] Metal Performance HUD activated on CAMetalLayer: %@", metalLayer);
+        }
+    }
+}
+
 void AliceNativeMenu_SetMetalHUD(int enabled) {
-    setenv("MTL_HUD_ENABLED", enabled ? "1" : "0", 1);
     [[NSUserDefaults standardUserDefaults] setBool:(enabled != 0) forKey:@"MetalHUDEnabled"];
     [[NSUserDefaults standardUserDefaults] synchronize];
+    setenv("MTL_HUD_ENABLED", enabled ? "1" : "0", 1);
 
     if (@available(iOS 16.0, *)) {
         void* p = AliceGetMTKView();
         if (p) {
             UIView *mtkView = (__bridge UIView*)p;
-            if ([mtkView.layer respondsToSelector:@selector(setDeveloperHUDProperties:)]) {
+            CAMetalLayer *metalLayer = AliceFindMetalLayer(mtkView);
+            if (metalLayer) {
                 if (enabled) {
-                    [mtkView.layer performSelector:@selector(setDeveloperHUDProperties:) withObject:@{@"mode": @"default"}];
+                    metalLayer.developerHUDProperties = @{@"mode": @"default"};
                 } else {
-                    [mtkView.layer performSelector:@selector(setDeveloperHUDProperties:) withObject:nil];
+                    metalLayer.developerHUDProperties = nil;
                 }
+                NSLog(@"[LookingMetal] Toggled developerHUDProperties: %d on layer: %@", enabled, metalLayer);
             }
         }
     }
@@ -705,14 +767,15 @@ void AliceNativeMenu_Show(void* root_vc_ptr,
         menu.voiceVol = voice_vol;
         menu.lookSens = look_sens;
         menu.invertY = (invert_y != 0);
-        menu.metalHUD = (metal_hud != 0);
+        BOOL hudSaved = [[NSUserDefaults standardUserDefaults] boolForKey:@"MetalHUDEnabled"];
+        menu.metalHUD = hudSaved || (metal_hud != 0);
 
         menu.hasContinue = (has_continue != 0);
         menu.continueSlot = continue_slot;
         menu.continueChapter = continue_chapter ? [NSString stringWithUTF8String:continue_chapter] : @"";
         menu.continueDate = continue_date ? [NSString stringWithUTF8String:continue_date] : @"";
 
-        if (metal_hud) {
+        if (menu.metalHUD) {
             AliceNativeMenu_SetMetalHUD(1);
         }
 

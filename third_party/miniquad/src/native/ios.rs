@@ -506,6 +506,11 @@ unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, _high_dpi: 
     ACTIVE_MTK_VIEW = mtk_view_obj;
     ACTIVE_VIEW_CONTROLLER = view_ctrl_obj;
 
+    extern "C" {
+        fn AliceApplyMetalHUD(mtk_view: *mut std::ffi::c_void);
+    }
+    AliceApplyMetalHUD(mtk_view_obj as *mut _);
+
     View {
         view: mtk_view_obj,
         view_dlg: mtk_view_dlg_obj,

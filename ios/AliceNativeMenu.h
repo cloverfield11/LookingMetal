@@ -54,6 +54,7 @@ int AliceNativeMenu_HasAction(void);
 AliceMenuResult AliceNativeMenu_GetResult(void);
 void AliceNativeMenu_Dismiss(void);
 void AliceNativeMenu_SetMetalHUD(int enabled);
+void AliceApplyMetalHUD(void* mtkViewPtr);
 
 #ifdef __cplusplus
 }
