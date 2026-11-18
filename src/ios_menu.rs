@@ -213,6 +213,10 @@ pub async fn choose(
     preferences.invert_mouse = res.invert_y != 0;
     preferences.invert_pad = res.invert_y != 0;
 
+    let mut launcher_settings = crate::launcher::LauncherSettings::load();
+    launcher_settings.metal_hud = res.metal_hud != 0;
+    launcher_settings.save();
+
     // Small delay to let the UIKit fade-out animation play smoothly
     for _ in 0..10 {
         clear_background(Color::new(0.04, 0.04, 0.06, 1.0));

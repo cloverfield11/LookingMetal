@@ -499,6 +499,12 @@ unsafe fn create_metal_view(screen_rect: NSRect, _sample_count: i32, _high_dpi: 
     msg_send_![mtk_view_obj, setPaused: YES];
     msg_send_![mtk_view_obj, setPreferredFramesPerSecond:120];
     msg_send_![mtk_view_obj, setDelegate: mtk_view_dlg_obj];
+
+    extern "C" {
+        fn AlicePreMetalInit();
+    }
+    AlicePreMetalInit();
+
     let device = MTLCreateSystemDefaultDevice();
     msg_send_![mtk_view_obj, setDevice: device];
     msg_send_![mtk_view_obj, setUserInteractionEnabled: YES];

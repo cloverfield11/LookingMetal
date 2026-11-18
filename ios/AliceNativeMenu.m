@@ -632,6 +632,56 @@ void* AliceGetMTKView(void) {
     return NULL;
 }
 
+static void AliceLog(NSString *format, ...) {
+    va_list args;
+    va_start(args, format);
+    NSString *msg = [[NSString alloc] initWithFormat:format arguments:args];
+    va_end(args);
+    NSLog(@"%@", msg);
+
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    if (paths.count > 0) {
+        NSString *logPath = [paths[0] stringByAppendingPathComponent:@"alice_hud.log"];
+        NSString *line = [NSString stringWithFormat:@"[%@] %@\n", [NSDate date], msg];
+        NSFileHandle *h = [NSFileHandle fileHandleForWritingAtPath:logPath];
+        if (!h) {
+            [[NSFileManager defaultManager] createFileAtPath:logPath contents:nil attributes:nil];
+            h = [NSFileHandle fileHandleForWritingAtPath:logPath];
+        }
+        [h seekToEndOfFile];
+        [h writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+        [h closeFile];
+    }
+}
+
+static BOOL AliceIsMetalHUDRequested(void) {
+    if ([[NSUserDefaults standardUserDefaults] boolForKey:@"MetalHUDEnabled"]) {
+        return YES;
+    }
+    NSDictionary *domain = [[NSUserDefaults standardUserDefaults] persistentDomainForName:@"org.lookingglass.alice"];
+    if ([domain[@"MetalHUDEnabled"] boolValue]) {
+        return YES;
+    }
+    const char *e = getenv("DM_METAL_HUD");
+    if (e && atoi(e)) return YES;
+    const char *m = getenv("MTL_HUD_ENABLED");
+    if (m && atoi(m)) return YES;
+
+    NSArray *paths = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES);
+    if (paths.count > 0) {
+        NSString *docDir = paths[0];
+        NSString *launcherJson = [docDir stringByAppendingPathComponent:@"ios-launcher.json"];
+        NSData *d = [NSData dataWithContentsOfFile:launcherJson];
+        if (d) {
+            NSDictionary *dict = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
+            if ([dict[@"metal_hud"] boolValue]) {
+                return YES;
+            }
+        }
+    }
+    return NO;
+}
+
 static CAMetalLayer* AliceFindMetalLayer(UIView *v) {
     if (!v) return nil;
     if ([v.layer isKindOfClass:[CAMetalLayer class]]) {
@@ -650,37 +700,51 @@ static CAMetalLayer* AliceFindMetalLayer(UIView *v) {
 }
 
 __attribute__((constructor)) static void alice_hud_prelaunch(void) {
-    BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"MetalHUDEnabled"];
-    const char *e = getenv("DM_METAL_HUD");
-    if (e && atoi(e)) enabled = YES;
-    const char *m = getenv("MTL_HUD_ENABLED");
-    if (m && atoi(m)) enabled = YES;
+    setenv("MTL_HUD_ENABLED", "1", 1);
+    setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
+    AliceLog(@"[LookingMetal] __attribute__((constructor)): setenv MTL_HUD_ENABLED=1 at dyld init");
+}
 
-    if (enabled) {
-        setenv("MTL_HUD_ENABLED", "1", 1);
-        setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
-        NSLog(@"[LookingMetal] __attribute__((constructor)): MTL_HUD_ENABLED=1 set before Metal device creation!");
-    }
+void AlicePreMetalInit(void) {
+    setenv("MTL_HUD_ENABLED", "1", 1);
+    setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
+    AliceLog(@"[LookingMetal] AlicePreMetalInit: setenv MTL_HUD_ENABLED=1 before MTLCreateSystemDefaultDevice");
 }
 
 void AliceApplyMetalHUD(void* mtkViewPtr) {
-    BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"MetalHUDEnabled"];
-    const char *e = getenv("DM_METAL_HUD");
-    if (e && atoi(e)) enabled = YES;
-    const char *m = getenv("MTL_HUD_ENABLED");
-    if (m && atoi(m)) enabled = YES;
-
-    if (!enabled) return;
-
-    setenv("MTL_HUD_ENABLED", "1", 1);
-    setenv("MTL_HUD_HIDE_METALFX_METRICS", "1", 1);
+    BOOL enabled = AliceIsMetalHUDRequested();
+    AliceLog(@"[LookingMetal] AliceApplyMetalHUD: enabled=%d, mtkViewPtr=%p", enabled, mtkViewPtr);
 
     if (@available(iOS 16.0, *)) {
         UIView *view = (__bridge UIView*)mtkViewPtr;
         CAMetalLayer *metalLayer = AliceFindMetalLayer(view);
         if (metalLayer) {
-            metalLayer.developerHUDProperties = @{@"mode": @"default"};
-            NSLog(@"[LookingMetal] Metal Performance HUD activated on CAMetalLayer: %@", metalLayer);
+            metalLayer.developerHUDProperties = enabled ? @{@"mode": @"default"} : nil;
+            AliceLog(@"[LookingMetal] AliceApplyMetalHUD: set developerHUDProperties on layer %p to %@", metalLayer, metalLayer.developerHUDProperties);
+        } else {
+            AliceLog(@"[LookingMetal] AliceApplyMetalHUD: could not find CAMetalLayer on view %@", view);
+        }
+    }
+}
+
+static int s_last_hud_state = -1;
+void AliceOnFrameDrawable(void* drawablePtr) {
+    if (!drawablePtr) return;
+    int wanted = AliceIsMetalHUDRequested() ? 1 : 0;
+    if (wanted == s_last_hud_state) return;
+
+    id drawable = (__bridge id)drawablePtr;
+    if ([drawable respondsToSelector:@selector(layer)]) {
+        id layer = [drawable performSelector:@selector(layer)];
+        if (layer && [layer respondsToSelector:@selector(setDeveloperHUDProperties:)]) {
+            if (wanted) {
+                [layer performSelector:@selector(setDeveloperHUDProperties:) withObject:@{@"mode": @"default"}];
+                AliceLog(@"[LookingMetal] AliceOnFrameDrawable: HUD activated on drawable.layer %p", layer);
+            } else {
+                [layer performSelector:@selector(setDeveloperHUDProperties:) withObject:nil];
+                AliceLog(@"[LookingMetal] AliceOnFrameDrawable: HUD deactivated on drawable.layer %p", layer);
+            }
+            s_last_hud_state = wanted;
         }
     }
 }
@@ -689,6 +753,9 @@ void AliceNativeMenu_SetMetalHUD(int enabled) {
     [[NSUserDefaults standardUserDefaults] setBool:(enabled != 0) forKey:@"MetalHUDEnabled"];
     [[NSUserDefaults standardUserDefaults] synchronize];
     setenv("MTL_HUD_ENABLED", enabled ? "1" : "0", 1);
+    s_last_hud_state = -1;
+
+    AliceLog(@"[LookingMetal] AliceNativeMenu_SetMetalHUD: enabled=%d", enabled);
 
     if (@available(iOS 16.0, *)) {
         void* p = AliceGetMTKView();
@@ -696,12 +763,8 @@ void AliceNativeMenu_SetMetalHUD(int enabled) {
             UIView *mtkView = (__bridge UIView*)p;
             CAMetalLayer *metalLayer = AliceFindMetalLayer(mtkView);
             if (metalLayer) {
-                if (enabled) {
-                    metalLayer.developerHUDProperties = @{@"mode": @"default"};
-                } else {
-                    metalLayer.developerHUDProperties = nil;
-                }
-                NSLog(@"[LookingMetal] Toggled developerHUDProperties: %d on layer: %@", enabled, metalLayer);
+                metalLayer.developerHUDProperties = enabled ? @{@"mode": @"default"} : nil;
+                AliceLog(@"[LookingMetal] AliceNativeMenu_SetMetalHUD: set developerHUDProperties on mtkView.layer %p", metalLayer);
             }
         }
     }

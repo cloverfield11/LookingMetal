@@ -1273,6 +1273,15 @@ impl RenderingBackend for MetalContext {
         unsafe {
             assert!(!self.command_queue.is_null());
             let drawable: ObjcId = msg_send!(self.view, currentDrawable);
+
+            #[cfg(target_os = "ios")]
+            if !drawable.is_null() {
+                extern "C" {
+                    fn AliceOnFrameDrawable(drawable: *mut std::ffi::c_void);
+                }
+                AliceOnFrameDrawable(drawable as *mut _);
+            }
+
             //msg_send_![drawable, retain];
             msg_send_![self.command_buffer.unwrap(), presentDrawable: drawable];
             msg_send_![self.command_buffer.unwrap(), commit];
